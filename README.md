@@ -45,6 +45,8 @@ Neither socket uses the default `tmux` socket, so your regular `tmux` usage is c
 ```bash
 multmux start [--no-attach]   # Start multmux (idempotent)
 multmux stop                  # Stop all sessions (asks for confirmation)
+multmux attach                # Attach to the outer session (idempotent)
+multmux detach                # Detach from multmux, from anywhere (idempotent)
 multmux add                   # Add a new inner session and switch to it
 multmux remove                # Remove current inner session
 multmux list                  # List inner sessions
@@ -61,6 +63,12 @@ Creates the outer layout and inner sessions. If already running, attaches to the
 ### `stop`
 
 Asks for confirmation, then kills all inner sessions and the outer session.
+
+### `attach` / `detach`
+
+`attach` attaches to the outer session, from anywhere. It's a no-op if you're already attached.
+
+`detach` detaches your terminal from the outer session, from anywhere (a separate terminal, an overflow pane, or an inner session). It's a no-op if you're not attached.
 
 ### `update`
 

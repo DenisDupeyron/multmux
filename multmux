@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.1.1"
+VERSION="0.1.2"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="multmux-outer"
@@ -155,6 +155,56 @@ cmd_start() {
 
     if [[ "${no_attach}" == false ]]; then
         exec ${TMO} attach
+    fi
+}
+
+cmd_attach() {
+    if [[ $# -gt 0 ]]; then
+        die "Unknown option: $1"
+    fi
+
+    if ! outer_running; then
+        die "multmux is not running. Use 'multmux start' first."
+    fi
+
+    if [[ -n "${TMUX:-}" ]]; then
+        info "Already attached."
+        return 0
+    fi
+
+    exec ${TMO} attach
+}
+
+cmd_detach() {
+    if [[ $# -gt 0 ]]; then
+        die "Unknown option: $1"
+    fi
+
+    local detached=false
+    local clients
+
+    # Only detach clients on the outer socket. In normal use, the only
+    # inner-socket client is the nested "tmux attach" running inside the
+    # outer session's main pane (pane 0), and detaching it there would kill
+    # that nested process, leaving pane 0 on a bare shell instead of the
+    # inner session view on the next attach. Detaching the user's real
+    # terminal from the outer socket, from any pane or session, is enough
+    # to return them to a plain, non-multiplexed terminal.
+
+    if outer_running; then
+        clients=$(${TMO} list-clients -F '#{client_name}' 2>/dev/null || true)
+        if [[ -n "${clients}" ]]; then
+            while IFS= read -r client; do
+                ${TMO} detach-client -t "${client}" 2>/dev/null || true
+            done <<<"${clients}"
+            detached=true
+        fi
+    fi
+
+    if [[ "${detached}" == true ]]; then
+        info "Detached."
+    else
+        info "Not attached."
     fi
 }
 
@@ -304,6 +354,8 @@ Usage: multmux <command> [options]
 Commands:
   start [--no-attach]   Start multmux (idempotent)
   stop                  Stop multmux sessions (asks for confirmation)
+  attach                Attach to the outer session (idempotent)
+  detach                Detach from multmux, from anywhere (idempotent)
   add                   Add a new inner session and switch to it
   remove                Remove current inner session
   list                  List inner sessions
@@ -324,6 +376,14 @@ start)
 stop)
     shift
     cmd_stop "$@"
+    ;;
+attach)
+    shift
+    cmd_attach "$@"
+    ;;
+detach)
+    shift
+    cmd_detach "$@"
     ;;
 add)
     shift
