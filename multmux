@@ -1,0 +1,338 @@
+#!/usr/bin/env bash
+
+# Copyright (C) 2026 Denis Dupeyron
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+set -euo pipefail
+
+# multmux - tmux session multiplexer using two isolated sockets
+# https://github.com/DenisDupeyron/multmux
+
+VERSION="0.1.0"
+CONF_FILE="${HOME}/.config/multmux.conf"
+CACHE_DIR="${HOME}/.cache/multmux"
+OUTER_SOCKET="multmux-outer"
+INNER_SOCKET="multmux-inner"
+TMO="tmux -L ${OUTER_SOCKET}"
+TMI="tmux -L ${INNER_SOCKET}"
+
+# --- Helpers ---
+
+die() { echo "error: $*" >&2; exit 1; }
+warn() { echo "warning: $*" >&2; }
+info() { echo "multmux: $*"; }
+
+load_config() {
+    [[ -f "${CONF_FILE}" ]] || die "Config not found: ${CONF_FILE}"
+    # shellcheck disable=SC1090
+    source "${CONF_FILE}"
+}
+
+ensure_cache_dir() {
+    mkdir -p "${CACHE_DIR}"
+}
+
+write_temp_configs() {
+    ensure_cache_dir
+    printf '%s\n' "${BASE_CONF}" "${OUTER_CONF}" > "${CACHE_DIR}/outer.conf"
+    printf '%s\n' "${BASE_CONF}" "${INNER_CONF}" > "${CACHE_DIR}/inner.conf"
+}
+
+outer_running() {
+    ${TMO} list-sessions &>/dev/null 2>&1
+}
+
+inner_running() {
+    ${TMI} list-sessions &>/dev/null 2>&1
+}
+
+inner_session_count() {
+    ${TMI} list-sessions 2>/dev/null | wc -l | tr -d ' '
+}
+
+inner_session_list() {
+    ${TMI} list-sessions -F '#{session_name}' 2>/dev/null | sort
+}
+
+next_session_number() {
+    local last
+    last=$(inner_session_list | grep -oE '[0-9]+$' | sort -n | tail -1)
+    if [[ -z "${last}" ]]; then
+        echo "01"
+    else
+        printf "%02d" $(( 10#${last} + 1 ))
+    fi
+}
+
+current_inner_session() {
+    # The inner client in the main pane. Ask the inner server for its current session
+    ${TMI} display-message -p '#{session_name}' 2>/dev/null
+}
+
+has_running_processes() {
+    # Check if any inner pane has a foreground process that isn't a shell
+    local pane_pids
+    pane_pids=$(${TMI} list-panes -a -F '#{pane_pid}' 2>/dev/null)
+    for pid in ${pane_pids}; do
+        local children
+        children=$(pgrep -P "${pid}" 2>/dev/null || true)
+        if [[ -n "${children}" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# --- Subcommands ---
+
+cmd_start() {
+    local no_attach=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --no-attach) no_attach=true; shift ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    if outer_running; then
+        info "Already running."
+        if [[ "${no_attach}" == false ]]; then
+            exec ${TMO} attach
+        fi
+        return 0
+    fi
+
+    # Prevent starting from inside a tmux session
+    if [[ -n "${TMUX:-}" ]]; then
+        die "Cannot start from inside a tmux session. Run from a bare terminal."
+    fi
+
+    load_config
+    write_temp_configs
+
+    info "Starting outer session..."
+    ${TMO} new-session -c "${START_DIR}" -d
+
+    info "Loading outer config..."
+    ${TMO} source-file "${CACHE_DIR}/outer.conf"
+
+    # Unset TMUX in the main pane so inner sessions can start
+    ${TMO} send-keys "unset TMUX" C-m
+
+    info "Starting ${INNER_SESSIONS} inner sessions..."
+    for session in $(seq -f "%02g" "${INNER_SESSIONS}" -1 1); do
+        ${TMO} send-keys "${TMI} new-session -s session-${session} -c '${START_DIR}' -d" C-m
+    done
+
+    # Small delay for sessions to initialize
+    sleep 0.5
+
+    info "Loading inner config..."
+    ${TMO} send-keys "${TMI} source-file '${CACHE_DIR}/inner.conf'" C-m
+
+    info "Attaching to inner session-01..."
+    ${TMO} send-keys "${TMI} attach -t session-01" C-m
+
+    # Create overflow panes on the right
+    for _ in $(seq 1 "${OVERFLOW_PANES}"); do
+        ${TMO} split-window -c "${START_DIR}"
+    done
+
+    # Set layout
+    ${TMO} set-window-option main-pane-width "${MAIN_PANE_WIDTH}"
+    ${TMO} select-layout main-vertical
+    ${TMO} set-hook -g window-resized 'select-layout main-vertical'
+
+    # Focus the main pane
+    ${TMO} select-pane -t 0
+
+    info "Ready."
+
+    if [[ "${no_attach}" == false ]]; then
+        exec ${TMO} attach
+    fi
+}
+
+cmd_stop() {
+    local force=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force) force=true; shift ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    if ! outer_running && ! inner_running; then
+        info "Not running."
+        return 0
+    fi
+
+    if [[ "${force}" == true ]]; then
+        read -r -p "Kill all multmux sessions? [y/N] " confirm
+        if [[ "${confirm}" != [yY] ]]; then
+            info "Aborted."
+            return 0
+        fi
+        info "Killing inner sessions..."
+        ${TMI} kill-server 2>/dev/null || true
+        info "Killing outer session..."
+        ${TMO} kill-server 2>/dev/null || true
+        info "Stopped."
+        return 0
+    fi
+
+    # Without --force, check for running processes
+    if inner_running && has_running_processes; then
+        warn "Processes are still running in inner sessions."
+        echo "  Use 'multmux list' to inspect, or 'multmux stop --force' to kill everything."
+        return 1
+    fi
+
+    info "Killing inner sessions..."
+    ${TMI} kill-server 2>/dev/null || true
+    info "Killing outer session..."
+    ${TMO} kill-server 2>/dev/null || true
+    info "Stopped."
+}
+
+cmd_add() {
+    if ! inner_running; then
+        die "multmux is not running. Use 'multmux start' first."
+    fi
+
+    load_config
+
+    local num
+    num=$(next_session_number)
+    local name="session-${num}"
+
+    info "Creating ${name}..."
+    ${TMI} new-session -s "${name}" -c "${START_DIR}" -d
+    ${TMI} source-file "${CACHE_DIR}/inner.conf"
+
+    # Switch the inner client to the new session
+    ${TMI} switch-client -t "${name}"
+    info "Switched to ${name}."
+}
+
+cmd_delete() {
+    if ! inner_running; then
+        die "multmux is not running. Use 'multmux start' first."
+    fi
+
+    load_config
+
+    local current
+    current=$(current_inner_session)
+
+    if [[ -z "${current}" ]]; then
+        die "Cannot determine current inner session."
+    fi
+
+    local sessions
+    sessions=$(inner_session_list)
+    local count
+    count=$(echo "${sessions}" | wc -l | tr -d ' ')
+
+    if [[ "${count}" -le 1 ]]; then
+        # Last session. Kill it and create a fresh one
+        info "Last session. Creating a replacement..."
+        local num
+        num=$(next_session_number)
+        local name="session-${num}"
+        ${TMI} new-session -s "${name}" -c "${START_DIR}" -d
+        ${TMI} source-file "${CACHE_DIR}/inner.conf"
+        ${TMI} switch-client -t "${name}"
+        ${TMI} kill-session -t "${current}"
+        info "Deleted ${current}, switched to ${name}."
+        return 0
+    fi
+
+    # Find previous or next session
+    local target=""
+    local prev=""
+    while IFS= read -r sess; do
+        if [[ "${sess}" == "${current}" ]]; then
+            if [[ -n "${prev}" ]]; then
+                target="${prev}"
+                break
+            fi
+        else
+            if [[ -n "${prev}" && "${prev}" == "${current}" ]]; then
+                target="${sess}"
+                break
+            fi
+        fi
+        prev="${sess}"
+    done <<< "${sessions}"
+
+    if [[ -z "${target}" ]]; then
+        # Fallback: pick any session that isn't current
+        target=$(echo "${sessions}" | grep -v "^${current}$" | head -1)
+    fi
+
+    ${TMI} switch-client -t "${target}"
+    ${TMI} kill-session -t "${current}"
+    info "Deleted ${current}, switched to ${target}."
+}
+
+cmd_list() {
+    if ! inner_running; then
+        die "multmux is not running."
+    fi
+
+    local current
+    current=$(current_inner_session 2>/dev/null || echo "")
+
+    echo "Inner sessions (socket: ${INNER_SOCKET}):"
+    while IFS= read -r sess; do
+        if [[ "${sess}" == "${current}" ]]; then
+            echo "  * ${sess} (active)"
+        else
+            echo "    ${sess}"
+        fi
+    done <<< "$(inner_session_list)"
+}
+
+cmd_help() {
+    cat << EOF
+multmux ${VERSION} - tmux session multiplexer
+
+Usage: multmux <command> [options]
+
+Commands:
+  start [--no-attach]   Start multmux (idempotent)
+  stop [--force]        Stop multmux sessions
+  add                   Add a new inner session and switch to it
+  delete                Delete current inner session
+  list                  List inner sessions
+  help                  Show this help
+
+Configuration: ${CONF_FILE}
+EOF
+}
+
+# --- Main dispatch ---
+
+case "${1:-help}" in
+    start)  shift; cmd_start "$@" ;;
+    stop)   shift; cmd_stop "$@" ;;
+    add)    shift; cmd_add "$@" ;;
+    delete) shift; cmd_delete "$@" ;;
+    list)   cmd_list ;;
+    help|--help|-h) cmd_help ;;
+    version|--version|-v) echo "multmux ${VERSION}" ;;
+    *)      die "Unknown command: $1. Run 'multmux help' for usage." ;;
+esac
