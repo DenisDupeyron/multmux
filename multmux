@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.1.2"
+VERSION="0.1.3"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="multmux-outer"
@@ -156,6 +156,23 @@ cmd_start() {
     if [[ "${no_attach}" == false ]]; then
         exec ${TMO} attach
     fi
+}
+
+cmd_reset_layout() {
+    if [[ $# -gt 0 ]]; then
+        die "Unknown option: $1"
+    fi
+
+    if ! outer_running; then
+        die "multmux is not running. Use 'multmux start' first."
+    fi
+
+    load_config
+
+    info "Resetting outer layout..."
+    ${TMO} set-window-option main-pane-width "${MAIN_PANE_WIDTH}"
+    ${TMO} select-layout main-vertical
+    info "Done."
 }
 
 cmd_attach() {
@@ -359,6 +376,7 @@ Commands:
   add                   Add a new inner session and switch to it
   remove                Remove current inner session
   list                  List inner sessions
+  reset-layout          Reset outer pane geometry to configured sizes
   update                Update multmux to the latest version
   help                  Show this help
 
@@ -394,6 +412,10 @@ remove)
     cmd_remove "$@"
     ;;
 list) cmd_list ;;
+reset-layout)
+    shift
+    cmd_reset_layout "$@"
+    ;;
 update)
     shift
     cmd_update "$@"

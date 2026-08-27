@@ -50,6 +50,7 @@ multmux detach                # Detach from multmux, from anywhere (idempotent)
 multmux add                   # Add a new inner session and switch to it
 multmux remove                # Remove current inner session
 multmux list                  # List inner sessions
+multmux reset-layout          # Reset outer pane geometry to configured sizes
 multmux update                # Update multmux to the latest version
 multmux help                  # Show help
 ```
@@ -79,6 +80,10 @@ Re-runs the install script to fetch the latest `multmux` script from GitHub. You
 `add` creates a new inner session and switches to it immediately.
 
 `remove` kills the current inner session and switches to the previous one. If it's the last session, a fresh replacement is created automatically (the main pane is never left empty).
+
+### `reset-layout`
+
+Re-applies the configured `MAIN_PANE_WIDTH` and the `main-vertical` layout to the outer session's main and overflow panes. Use it if manual dragging (or anything else) has thrown the pane proportions off. Focus is left untouched.
 
 ## Configuration
 
