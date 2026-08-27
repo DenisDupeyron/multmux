@@ -112,6 +112,11 @@ cmd_start() {
         die "Cannot start from inside a tmux session. Run from a bare terminal."
     fi
 
+    if inner_running; then
+        warn "Found orphaned inner sessions from a previous run. Cleaning up..."
+        ${TMI} kill-server 2>/dev/null || true
+    fi
+
     load_config
     write_temp_configs
 
