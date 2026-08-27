@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.2.6"
+VERSION="0.3.0"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -28,6 +28,31 @@ INNER_SOCKET="${MULTMUX_INNER_SOCKET:-multmux-inner}"
 TMO="tmux -L ${OUTER_SOCKET}"
 TMI="tmux -L ${INNER_SOCKET}"
 REPO_URL="https://raw.githubusercontent.com/DenisDupeyron/multmux/main"
+
+# Absolute path to this script itself, needed to reference it from inside a
+# tmux hook (run-shell commands don't reliably inherit the invoking shell's
+# PATH), resolved once at startup regardless of how multmux was invoked
+# (bare name via PATH, relative path, or already absolute).
+resolve_self_path() {
+    local src="${BASH_SOURCE[0]}"
+    if command -v realpath &>/dev/null; then
+        realpath "${src}"
+    elif readlink -f "${src}" &>/dev/null; then
+        readlink -f "${src}"
+    else
+        local dir
+        dir="$(cd "$(dirname "${src}")" && pwd)"
+        printf '%s/%s\n' "${dir}" "$(basename "${src}")"
+    fi
+}
+SELF_PATH="$(resolve_self_path)"
+
+# Canonical (symlink-resolved) form of $HOME, used for the "~" substitution
+# in CWD-based session naming. tmux's pane_current_path is read from the OS
+# (e.g. via /proc/<pid>/cwd or libproc), which reports the resolved path --
+# comparing that against a non-canonical $HOME (e.g. a symlinked home
+# directory) would silently miss the substitution otherwise.
+HOME_REAL="$(cd "${HOME}" 2>/dev/null && pwd -P || printf '%s' "${HOME}")"
 
 # --- Helpers ---
 
@@ -48,11 +73,18 @@ load_config() {
     # shellcheck disable=SC1090
     source "${CONF_FILE}"
 
-    local required_vars=(START_DIR MAIN_PANE_WIDTH OVERFLOW_PANES INNER_SESSIONS BASE_CONF OUTER_CONF INNER_CONF)
+    local required_vars=(START_DIR MAIN_PANE_WIDTH OVERFLOW_PANES INNER_SESSIONS BASE_CONF OUTER_CONF INNER_CONF SESSION_NAME_COMPONENT_MAX SESSION_NAME_TOTAL_MAX)
     local var
     for var in "${required_vars[@]}"; do
         [[ -n "${!var+x}" ]] || die "Config ${CONF_FILE} is missing required variable: ${var}"
     done
+
+    # See use_dir_as_name.md: a per-component-max-sized component, prefixed
+    # by the leading "…/" used when other components get dropped, is the
+    # worst case the overall max has to accommodate.
+    if ((SESSION_NAME_TOTAL_MAX < SESSION_NAME_COMPONENT_MAX + 2)); then
+        die "SESSION_NAME_TOTAL_MAX (${SESSION_NAME_TOTAL_MAX}) must be at least SESSION_NAME_COMPONENT_MAX (${SESSION_NAME_COMPONENT_MAX}) + 2."
+    fi
 }
 
 ensure_cache_dir() {
@@ -63,6 +95,22 @@ write_temp_configs() {
     ensure_cache_dir
     printf '%s\n' "${BASE_CONF}" "${OUTER_CONF}" >"${CACHE_DIR}/outer.conf"
     printf '%s\n' "${BASE_CONF}" "${INNER_CONF}" >"${CACHE_DIR}/inner.conf"
+
+    # Drive CWD-based session renaming (see use_dir_as_name.md) off tmux's
+    # own automatic-rename/window-renamed mechanism instead of any shell
+    # integration. automatic-rename itself is turned on by INNER_CONF; the
+    # hook needs SELF_PATH baked in at runtime, so it's appended here
+    # rather than kept as a static line in INNER_CONF. #{session_id} is
+    # single-quoted inside the escaped run-shell string so tmux's literal
+    # "$N" substitution isn't re-expanded by the shell that executes it
+    # (verified live: without the single quotes, "$0" gets expanded to the
+    # invoking shell's own name instead of being passed through literally).
+    local dq='"'
+    local bsdq='\"'
+    local sq="'"
+    local hook_line
+    hook_line="set-hook -g window-renamed ${dq}run-shell ${bsdq}${SELF_PATH} _auto-rename ${sq}#{session_id}${sq}${bsdq}${dq}"
+    printf '%s\n' "${hook_line}" >>"${CACHE_DIR}/inner.conf"
 }
 
 outer_running() {
@@ -79,22 +127,6 @@ inner_session_count() {
 
 inner_session_list() {
     ${TMI} list-sessions -F '#{session_name}' 2>/dev/null | sort
-}
-
-next_session_number() {
-    # Find the smallest positive integer not already used by an inner
-    # session, so removed sessions' numbers get reused before growing past
-    # the current highest number.
-    local -A used
-    local num
-    while IFS= read -r num; do
-        [[ -n "${num}" ]] && used["$((10#${num}))"]=1
-    done < <(inner_session_list | grep -oE '[0-9]+$')
-    local candidate=1
-    while [[ -n "${used[${candidate}]+x}" ]]; do
-        candidate=$((candidate + 1))
-    done
-    printf "%02d" "${candidate}"
 }
 
 current_inner_session() {
@@ -127,6 +159,157 @@ validate_session_name() {
     if [[ "${name}" == *.* ]]; then
         die "Session name cannot contain '.' (reserved by tmux for window.pane targets)."
     fi
+}
+
+# --- CWD-based session naming (see use_dir_as_name.md) ---
+
+truncate_component() {
+    # Mid-string ellipsis truncation, ellipsis counted within max itself:
+    # a component longer than max is cut down to exactly max characters.
+    local name="$1" max="$2"
+    if ((${#name} <= max)); then
+        printf '%s' "${name}"
+        return
+    fi
+    local budget=$((max - 1))
+    local left=$(((budget + 1) / 2))
+    local right=$((budget - left))
+    if ((right > 0)); then
+        printf '%s…%s' "${name:0:left}" "${name: -right}"
+    else
+        printf '%s…' "${name:0:left}"
+    fi
+}
+
+substitute_special_chars() {
+    # ':' and '.' are reserved by tmux for session:window/window.pane target
+    # syntax (see validate_session_name). An automatic CWD-based rename
+    # can't reject-and-error like the interactive `rename` command does, so
+    # it substitutes them instead.
+    local s="$1"
+    s="${s//:/_}"
+    s="${s//./_}"
+    printf '%s' "${s}"
+}
+
+render_path_parts() {
+    # Join path components back together, applying the leading marker for
+    # either the preserved "~"/"/" prefix (nothing dropped yet) or the
+    # single ellipsis used once components have been dropped from the left.
+    local dropped="$1" leading="$2"
+    shift 2
+    local joined
+    joined="$(
+        IFS=/
+        echo "$*"
+    )"
+    if [[ "${dropped}" == true ]]; then
+        if [[ -n "${joined}" ]]; then
+            printf '…/%s' "${joined}"
+        else
+            printf '…'
+        fi
+    elif [[ "${leading}" == "~" ]]; then
+        if [[ -n "${joined}" ]]; then
+            # shellcheck disable=SC2088  # literal '~' text, not a path to expand
+            printf '~/%s' "${joined}"
+        else
+            # A session named exactly "~" (nothing else) is unusable: tmux
+            # treats the bare string "~" as target syntax for "the marked
+            # pane" (verified live -- 'attach -t ~' fails with "no marked
+            # target"), not as a literal session name, even though tmux
+            # happily creates a session with that name. "~/" isn't special
+            # and reads just as clearly for the home directory itself.
+            # shellcheck disable=SC2088  # literal '~/' text, not a path to expand
+            printf '~/'
+        fi
+    elif [[ "${leading}" == "/" ]]; then
+        printf '/%s' "${joined}"
+    else
+        printf '%s' "${joined}"
+    fi
+}
+
+format_session_name() {
+    # The full pipeline: home-dir substitution, then per-component
+    # mid-ellipsis truncation, then whole-component dropping from the left
+    # (with a single leading ellipsis) if the result is still too long.
+    local raw_path="$1" comp_max="$2" total_max="$3"
+    local path="${raw_path}"
+
+    if [[ "${path}" == "${HOME_REAL}" ]]; then
+        path="~"
+    elif [[ "${path}" == "${HOME_REAL}/"* ]]; then
+        path="~${path#"${HOME_REAL}"}"
+    fi
+
+    local leading=""
+    if [[ "${path}" == "~"* ]]; then
+        leading="~"
+        path="${path#\~}"
+        path="${path#/}"
+    elif [[ "${path}" == /* ]]; then
+        leading="/"
+        path="${path#/}"
+    fi
+
+    local -a parts=()
+    if [[ -n "${path}" ]]; then
+        IFS='/' read -r -a parts <<<"${path}"
+    fi
+
+    local i
+    for i in "${!parts[@]}"; do
+        parts[i]="$(substitute_special_chars "${parts[i]}")"
+        parts[i]="$(truncate_component "${parts[i]}" "${comp_max}")"
+    done
+
+    local dropped=false
+    local result
+    result="$(render_path_parts "${dropped}" "${leading}" "${parts[@]:-}")"
+    while ((${#result} > total_max)) && ((${#parts[@]} > 1)); do
+        parts=("${parts[@]:1}")
+        dropped=true
+        result="$(render_path_parts "${dropped}" "${leading}" "${parts[@]}")"
+    done
+
+    printf '%s' "${result}"
+}
+
+canonical_path() {
+    # Resolve symlinks the same way the OS resolves a process's cwd, so a
+    # path we compute a name for up front (e.g. START_DIR) matches what
+    # tmux's pane_current_path reports once a pane is actually running
+    # there. Falls back to the input unchanged if it doesn't exist (yet).
+    local p="$1"
+    (cd "${p}" 2>/dev/null && pwd -P) || printf '%s' "${p}"
+}
+
+session_name_for_path() {
+    format_session_name "$(canonical_path "$1")" "${SESSION_NAME_COMPONENT_MAX}" "${SESSION_NAME_TOTAL_MAX}"
+}
+
+name_in_use() {
+    local name="$1" used_list="$2" exclude="$3"
+    [[ -n "${exclude}" && "${name}" == "${exclude}" ]] && return 1
+    grep -qx -- "${name}" <<<"${used_list}"
+}
+
+unique_session_name() {
+    # Lowest available "-N" suffix, ignoring *why* a name is taken (real
+    # directory, earlier collision, or manual rename -- doesn't matter).
+    # $3, if given, is the session's own current name: a session renaming
+    # itself to the same name it already has must not count as a collision.
+    local candidate="$1" used_list="$2" exclude="${3:-}"
+    if ! name_in_use "${candidate}" "${used_list}" "${exclude}"; then
+        printf '%s\n' "${candidate}"
+        return
+    fi
+    local n=1
+    while name_in_use "${candidate}-${n}" "${used_list}" "${exclude}"; do
+        n=$((n + 1))
+    done
+    printf '%s-%s\n' "${candidate}" "${n}"
 }
 
 # --- Subcommands ---
@@ -173,9 +356,24 @@ cmd_start() {
     # Unset TMUX in the main pane so inner sessions can start
     ${TMO} send-keys "unset TMUX" C-m
 
+    # All INNER_SESSIONS sessions start out in the same START_DIR, so they
+    # collide on the same base name; assign them "-1", "-2", ... up front
+    # ourselves (see use_dir_as_name.md) instead of querying tmux, since
+    # none of them exist yet when this is computed. batch_names[0] (no
+    # suffix) is the one attached to below, replacing the old session-01.
+    local base_name
+    base_name="$(session_name_for_path "${START_DIR}")"
+    local -a batch_names=("${base_name}")
+    local k
+    for ((k = 1; k < INNER_SESSIONS; k++)); do
+        batch_names+=("${base_name}-${k}")
+    done
+
     info "Starting ${INNER_SESSIONS} inner sessions..."
-    for session in $(seq -f "%02g" "${INNER_SESSIONS}" -1 1); do
-        ${TMO} send-keys "${TMI} new-session -s session-${session} -c '${START_DIR}' -d" C-m
+    local session idx
+    for session in $(seq "${INNER_SESSIONS}" -1 1); do
+        idx=$((session - 1))
+        ${TMO} send-keys "${TMI} new-session -s '${batch_names[idx]}' -c '${START_DIR}' -d" C-m
     done
 
     # Small delay for sessions to initialize
@@ -184,8 +382,8 @@ cmd_start() {
     info "Loading inner config..."
     ${TMO} send-keys "${TMI} source-file '${CACHE_DIR}/inner.conf'" C-m
 
-    info "Attaching to inner session-01..."
-    ${TMO} send-keys "${TMI} attach -t session-01" C-m
+    info "Attaching to inner ${batch_names[0]}..."
+    ${TMO} send-keys "${TMI} attach -t '${batch_names[0]}'" C-m
 
     # Create overflow panes on the right
     for _ in $(seq 1 "${OVERFLOW_PANES}"); do
@@ -317,9 +515,9 @@ cmd_add() {
 
     load_config
 
-    local num
-    num=$(next_session_number)
-    local name="session-${num}"
+    local base name
+    base="$(session_name_for_path "${START_DIR}")"
+    name="$(unique_session_name "${base}" "$(inner_session_list)")"
 
     info "Creating ${name}..."
     ${TMI} new-session -s "${name}" -c "${START_DIR}" -d
@@ -352,9 +550,9 @@ cmd_remove() {
     if [[ "${count}" -le 1 ]]; then
         # Last session. Kill it and create a fresh one
         info "Last session. Creating a replacement..."
-        local num
-        num=$(next_session_number)
-        local name="session-${num}"
+        local base name
+        base="$(session_name_for_path "${START_DIR}")"
+        name="$(unique_session_name "${base}" "${sessions}" "${current}")"
         ${TMI} new-session -s "${name}" -c "${START_DIR}" -d
         ${TMI} source-file "${CACHE_DIR}/inner.conf"
         ${TMI} switch-client -t "${name}"
@@ -419,6 +617,9 @@ cmd_rename() {
     fi
 
     ${TMI} rename-session -t "${current}" "${new_name}"
+    # Mark it manually renamed so the CWD-based auto-rename hook leaves it
+    # alone from now on (see use_dir_as_name.md, rule 5).
+    ${TMI} set-option -t "${new_name}" @multmux_renamed 1
     info "Renamed ${current} to ${new_name}."
 }
 
@@ -438,6 +639,37 @@ cmd_list() {
             echo "    ${sess}"
         fi
     done <<<"$(inner_session_list)"
+}
+
+# Hidden/internal: invoked by the window-renamed tmux hook set up in
+# write_temp_configs, never by a user directly (see use_dir_as_name.md).
+cmd_auto_rename() {
+    local session_id="$1"
+
+    if ! inner_running; then
+        return 0
+    fi
+
+    load_config
+
+    # Sticky: a manually renamed session (multmux rename) stops tracking
+    # its CWD.
+    local sticky
+    sticky=$(${TMI} show-options -v -t "${session_id}" '@multmux_renamed' 2>/dev/null || echo "")
+    [[ "${sticky}" == "1" ]] && return 0
+
+    local raw_path current_name
+    raw_path=$(${TMI} display-message -p -t "${session_id}" '#{pane_current_path}' 2>/dev/null) || return 0
+    current_name=$(${TMI} display-message -p -t "${session_id}" '#{session_name}' 2>/dev/null) || return 0
+    [[ -z "${raw_path}" || -z "${current_name}" ]] && return 0
+
+    local base final
+    base="$(session_name_for_path "${raw_path}")"
+    final="$(unique_session_name "${base}" "$(inner_session_list)" "${current_name}")"
+
+    if [[ "${final}" != "${current_name}" ]]; then
+        ${TMI} rename-session -t "${session_id}" "${final}" 2>/dev/null || true
+    fi
 }
 
 cmd_update() {
@@ -510,6 +742,10 @@ rename)
     cmd_rename "$@"
     ;;
 list) cmd_list ;;
+_auto-rename)
+    shift
+    cmd_auto_rename "$@"
+    ;;
 reset-layout)
     shift
     cmd_reset_layout "$@"

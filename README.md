@@ -86,9 +86,23 @@ Re-runs the install script to fetch the latest `multmux` script from GitHub. You
 
 Renames the current inner session to the given name. Rejects empty names, names already in use, and names containing `:` or `.`, since tmux reserves those characters for `session:window.pane` targets and a session with either in its name can't be addressed reliably afterwards.
 
+Once a session has been renamed this way, it stops following its working directory (see Session naming below) until multmux is stopped and started again.
+
 ### `reset-layout`
 
 Re-applies the configured `MAIN_PANE_WIDTH` and the `main-vertical` layout to the outer session's main and overflow panes. Use it if manual dragging (or anything else) has thrown the pane proportions off. Focus is left untouched.
+
+## Session naming
+
+Inner sessions are named after their current directory, and automatically renamed whenever you `cd`:
+
+- Your home directory is shown as `~` (a session in your home directory itself is named `~/`, not a bare `~`, since tmux reserves the exact string `~` for its own "marked pane" target syntax).
+- Any single path component longer than `SESSION_NAME_COMPONENT_MAX` (default 20) is truncated in its own middle, with an ellipsis (e.g. `a-really-long-directory-name` → `a-really-l…tory-name`).
+- If the whole name is still longer than `SESSION_NAME_TOTAL_MAX` (default 60) after that, whole components are dropped from the left and replaced with a single leading ellipsis (e.g. `~/work/clients/acme/backend/services/billing` → `…/backend/services/billing`).
+- If two sessions would end up with the same name, the newer one gets `-1`, `-2`, etc. appended (lowest available number, reused when a session is removed).
+- `:` and `.` are replaced (tmux reserves them for `session:window.pane` targets); this only applies to automatic renaming, since `rename` rejects them outright instead (see above).
+
+Renaming a session manually with `multmux rename` makes it stop following its directory.
 
 ## Configuration
 
@@ -106,6 +120,16 @@ OVERFLOW_PANES=3
 
 # Number of inner sessions at start in the main pane (maximum 99)
 INNER_SESSIONS=10
+
+# Inner sessions are automatically named/renamed from their current
+# directory (see Session naming above). Any single path component longer
+# than this is truncated in its own middle, with an ellipsis.
+SESSION_NAME_COMPONENT_MAX=20
+
+# If the whole computed name is still longer than this after per-component
+# truncation, whole components are dropped from the left and replaced with
+# a single leading ellipsis. Must be at least SESSION_NAME_COMPONENT_MAX + 2.
+SESSION_NAME_TOTAL_MAX=60
 
 # Base tmux config applied to both outer and inner sessions
 BASE_CONF=$(cat << 'EOF'
@@ -126,6 +150,8 @@ set -g window-status-format ""
 set -g window-status-current-format ""
 set -g status-left-length 80
 set -g status on
+set-window-option -g automatic-rename on
+set-option -g automatic-rename-format "#{pane_current_path}"
 EOF
 )
 ```
@@ -148,10 +174,10 @@ Terminal
 └── tmux (socket: multmux-outer)
     ├── Pane 0 (main, left 60%)
     │   └── tmux attach (socket: multmux-inner)
-    │       ├── session-01
-    │       ├── session-02
+    │       ├── ~/ (named after its cwd, see Session naming)
+    │       ├── ~/-1
     │       ├── ...
-    │       └── session-10
+    │       └── ~/-9
     ├── Pane 1 (overflow)
     ├── Pane 2 (overflow)
     └── Pane 3 (overflow)
