@@ -77,13 +77,19 @@ inner_session_list() {
 }
 
 next_session_number() {
-    local last
-    last=$(inner_session_list | grep -oE '[0-9]+$' | sort -n | tail -1)
-    if [[ -z "${last}" ]]; then
-        echo "01"
-    else
-        printf "%02d" $((10#${last} + 1))
-    fi
+    # Find the smallest positive integer not already used by an inner
+    # session, so removed sessions' numbers get reused before growing past
+    # the current highest number.
+    local -A used
+    local num
+    while IFS= read -r num; do
+        [[ -n "${num}" ]] && used["$((10#${num}))"]=1
+    done < <(inner_session_list | grep -oE '[0-9]+$')
+    local candidate=1
+    while [[ -n "${used[${candidate}]+x}" ]]; do
+        candidate=$((candidate + 1))
+    done
+    printf "%02d" "${candidate}"
 }
 
 current_inner_session() {
