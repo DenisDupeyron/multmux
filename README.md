@@ -132,6 +132,7 @@ The `tmux` config blocks use standard `tmux` syntax, just paste your settings be
 ```bash
 rm ~/.local/bin/multmux
 rm ~/.config/multmux.conf        # if you want to remove the config too
+rm ~/.config/tmux/tmux.conf      # if multmux installed it and you want to remove it too
 rm -rf ~/.cache/multmux
 ```
 
