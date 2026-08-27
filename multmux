@@ -27,6 +27,7 @@ OUTER_SOCKET="multmux-outer"
 INNER_SOCKET="multmux-inner"
 TMO="tmux -L ${OUTER_SOCKET}"
 TMI="tmux -L ${INNER_SOCKET}"
+REPO_URL="https://raw.githubusercontent.com/DenisDupeyron/multmux/main"
 
 # --- Helpers ---
 
@@ -273,6 +274,21 @@ cmd_list() {
     done <<< "$(inner_session_list)"
 }
 
+cmd_update() {
+    if [[ $# -gt 0 ]]; then
+        die "Unknown option: $1"
+    fi
+
+    info "Fetching install script from ${REPO_URL}..."
+    if command -v curl &>/dev/null; then
+        curl -fsSL "${REPO_URL}/install.sh" | bash
+    elif command -v wget &>/dev/null; then
+        wget -qO- "${REPO_URL}/install.sh" | bash
+    else
+        die "Neither curl nor wget found."
+    fi
+}
+
 cmd_help() {
     cat << EOF
 multmux ${VERSION} - tmux session multiplexer
@@ -285,6 +301,7 @@ Commands:
   add                   Add a new inner session and switch to it
   delete                Delete current inner session
   list                  List inner sessions
+  update                Update multmux to the latest version
   help                  Show this help
 
 Configuration: ${CONF_FILE}
@@ -299,6 +316,7 @@ case "${1:-help}" in
     add)    shift; cmd_add "$@" ;;
     delete) shift; cmd_delete "$@" ;;
     list)   cmd_list ;;
+    update) shift; cmd_update "$@" ;;
     help|--help|-h) cmd_help ;;
     version|--version|-v) echo "multmux ${VERSION}" ;;
     *)      die "Unknown command: $1. Run 'multmux help' for usage." ;;

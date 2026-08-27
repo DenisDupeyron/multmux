@@ -61,15 +61,25 @@ info "Dependencies OK (bash ${BASH_VERSION}, tmux ${tmux_version})"
 info "Installing multmux to ${INSTALL_DIR}/multmux..."
 mkdir -p "${INSTALL_DIR}"
 
+# Download to a temp file first, then move it into place atomically. This
+# matters because 'multmux update' may run this installer while the
+# currently-running multmux script is that very file: overwriting it in
+# place could corrupt the running process. mv (rename) does not touch the
+# original file's data, so a process already reading it is unaffected.
+tmp_multmux=$(mktemp)
+trap 'rm -f "${tmp_multmux}"' EXIT
+
 if command -v curl &>/dev/null; then
-    curl -fsSL "${REPO_URL}/multmux" -o "${INSTALL_DIR}/multmux"
+    curl -fsSL "${REPO_URL}/multmux" -o "${tmp_multmux}"
 elif command -v wget &>/dev/null; then
-    wget -q "${REPO_URL}/multmux" -O "${INSTALL_DIR}/multmux"
+    wget -q "${REPO_URL}/multmux" -O "${tmp_multmux}"
 else
     die "Neither curl nor wget found."
 fi
 
-chmod +x "${INSTALL_DIR}/multmux"
+chmod +x "${tmp_multmux}"
+mv "${tmp_multmux}" "${INSTALL_DIR}/multmux"
+trap - EXIT
 
 # --- Config ---
 

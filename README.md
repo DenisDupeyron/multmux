@@ -35,6 +35,7 @@ multmux stop                  # Stop all sessions (asks for confirmation)
 multmux add                   # Add a new inner session and switch to it
 multmux delete                # Delete current inner session
 multmux list                  # List inner sessions
+multmux update                # Update multmux to the latest version
 multmux help                  # Show help
 ```
 
@@ -47,6 +48,10 @@ Creates the outer layout and inner sessions. If already running, attaches to the
 ### `stop`
 
 Asks for confirmation, then kills all inner sessions and the outer session.
+
+### `update`
+
+Re-runs the install script to fetch the latest `multmux` script from GitHub. Your config at `~/.config/multmux.conf` and tmux.conf are left untouched since the installer only writes them if they do not already exist.
 
 ### `add` / `delete`
 
