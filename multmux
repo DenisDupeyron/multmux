@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.2.4"
+VERSION="0.2.5"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -93,8 +93,14 @@ next_session_number() {
 }
 
 current_inner_session() {
-    # The inner client in the main pane. Ask the inner server for its current session
-    ${TMI} display-message -p '#{session_name}' 2>/dev/null
+    # The inner client in the main pane. Query list-clients explicitly instead of
+    # relying on display-message's implicit "current session" resolution: with no
+    # -t, tmux can fall back to a session that isn't actually attached to any
+    # client (e.g. one that was briefly attached from a different tty in the past),
+    # even while exactly one session has a real, live attached client. list-clients
+    # only ever reports genuinely attached clients, so it isn't subject to that
+    # fallback ambiguity.
+    ${TMI} list-clients -F '#{session_name}' 2>/dev/null | head -1
 }
 
 validate_session_name() {
