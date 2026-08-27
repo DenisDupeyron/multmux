@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.2.2"
+VERSION="0.2.3"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="multmux-outer"
@@ -443,7 +443,7 @@ Commands:
   attach                Attach to the outer session (idempotent)
   detach                Detach from multmux, from anywhere (idempotent)
   add                   Add a new inner session and switch to it
-  remove                Remove current inner session
+  remove                Remove the current inner session
   rename <name>         Rename the current inner session
   list                  List inner sessions
   reset-layout          Reset outer pane geometry to configured sizes

@@ -48,7 +48,7 @@ multmux stop                  # Stop all sessions (asks for confirmation)
 multmux attach                # Attach to the outer session (idempotent)
 multmux detach                # Detach from multmux, from anywhere (idempotent)
 multmux add                   # Add a new inner session and switch to it
-multmux remove                # Remove current inner session
+multmux remove                # Remove the current inner session
 multmux rename <name>         # Rename the current inner session
 multmux list                  # List inner sessions
 multmux reset-layout          # Reset outer pane geometry to configured sizes
@@ -104,7 +104,7 @@ MAIN_PANE_WIDTH="60%"
 # Number of overflow panes stacked vertically on the right side
 OVERFLOW_PANES=3
 
-# Number of inner sessions in the main pane (maximum 99)
+# Number of inner sessions at start in the main pane (maximum 99)
 INNER_SESSIONS=10
 
 # Base tmux config applied to both outer and inner sessions
