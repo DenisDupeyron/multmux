@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.2.5"
+VERSION="0.2.6"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -35,8 +35,13 @@ die() {
     echo "error: $*" >&2
     exit 1
 }
-warn() { echo "warning: $*" >&2; }
-info() { echo "multmux: $*"; }
+# Both use `|| true` because a write can fail (e.g. EIO) if the
+# controlling terminal's pty has just been closed -- notably in `cmd_stop`,
+# where killing the inner server can invalidate the very pty this script is
+# writing to before it goes on to kill the outer server. Under `set -e`, an
+# unguarded failing echo would abort the script right there.
+warn() { echo "warning: $*" >&2 || true; }
+info() { echo "multmux: $*" || true; }
 
 load_config() {
     [[ -f "${CONF_FILE}" ]] || die "Config not found: ${CONF_FILE}"
@@ -284,6 +289,19 @@ cmd_stop() {
         info "Aborted."
         return 0
     fi
+
+    # Ignore SIGHUP for the rest of this command. If multmux stop is run
+    # from a shell prompt inside an inner session (the normal place to type
+    # commands, since the outer session's main pane just displays the
+    # attached inner client), killing the inner server below closes this
+    # very process's controlling pty. That makes the kernel deliver SIGHUP
+    # to this script immediately, and bash's default reaction is to die on
+    # the spot -- before ever reaching the outer kill-server call below.
+    # The same risk exists in the other direction if stop is run from a
+    # plain shell pane inside the outer session. Ignoring SIGHUP here makes
+    # the kill sequence immune to being interrupted by the very server
+    # shutdown it triggers, regardless of which socket's pty it runs on.
+    trap '' HUP
 
     info "Killing inner sessions..."
     ${TMI} kill-server 2>/dev/null || true
