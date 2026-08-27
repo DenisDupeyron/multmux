@@ -108,6 +108,13 @@ else
     info "tmux config already exists, skipping."
 fi
 
+# --- Version ---
+
+installed_version=$("${INSTALL_DIR}/multmux" --version 2>/dev/null | awk '{print $2}')
+if [[ -n "${installed_version}" ]]; then
+    info "Installed multmux version ${installed_version}."
+fi
+
 # --- PATH check ---
 
 if [[ ":${PATH}:" != *":${INSTALL_DIR}:"* ]]; then
