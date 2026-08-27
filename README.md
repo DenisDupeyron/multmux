@@ -33,7 +33,7 @@ Neither socket uses the default tmux socket, so your regular `tmux` usage is com
 multmux start [--no-attach]   # Start multmux (idempotent)
 multmux stop                  # Stop all sessions (asks for confirmation)
 multmux add                   # Add a new inner session and switch to it
-multmux delete                # Delete current inner session
+multmux remove                # Remove current inner session
 multmux list                  # List inner sessions
 multmux update                # Update multmux to the latest version
 multmux help                  # Show help
@@ -53,11 +53,11 @@ Asks for confirmation, then kills all inner sessions and the outer session.
 
 Re-runs the install script to fetch the latest `multmux` script from GitHub. Your config at `~/.config/multmux.conf` and tmux.conf are left untouched since the installer only writes them if they do not already exist.
 
-### `add` / `delete`
+### `add` / `remove`
 
 `add` creates a new inner session and switches to it immediately.
 
-`delete` kills the current inner session and switches to the previous one. If it's the last session, a fresh replacement is created automatically (the main pane is never left empty).
+`remove` kills the current inner session and switches to the previous one. If it's the last session, a fresh replacement is created automatically (the main pane is never left empty).
 
 ## Configuration
 

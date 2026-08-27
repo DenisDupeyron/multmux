@@ -195,7 +195,7 @@ cmd_add() {
     info "Switched to ${name}."
 }
 
-cmd_delete() {
+cmd_remove() {
     if ! inner_running; then
         die "multmux is not running. Use 'multmux start' first."
     fi
@@ -224,7 +224,7 @@ cmd_delete() {
         ${TMI} source-file "${CACHE_DIR}/inner.conf"
         ${TMI} switch-client -t "${name}"
         ${TMI} kill-session -t "${current}"
-        info "Deleted ${current}, switched to ${name}."
+        info "Removed ${current}, switched to ${name}."
         return 0
     fi
 
@@ -253,7 +253,7 @@ cmd_delete() {
 
     ${TMI} switch-client -t "${target}"
     ${TMI} kill-session -t "${current}"
-    info "Deleted ${current}, switched to ${target}."
+    info "Removed ${current}, switched to ${target}."
 }
 
 cmd_list() {
@@ -299,7 +299,7 @@ Commands:
   start [--no-attach]   Start multmux (idempotent)
   stop                  Stop multmux sessions (asks for confirmation)
   add                   Add a new inner session and switch to it
-  delete                Delete current inner session
+  remove                Remove current inner session
   list                  List inner sessions
   update                Update multmux to the latest version
   help                  Show this help
@@ -314,7 +314,7 @@ case "${1:-help}" in
     start)  shift; cmd_start "$@" ;;
     stop)   shift; cmd_stop "$@" ;;
     add)    shift; cmd_add "$@" ;;
-    delete) shift; cmd_delete "$@" ;;
+    remove) shift; cmd_remove "$@" ;;
     list)   cmd_list ;;
     update) shift; cmd_update "$@" ;;
     help|--help|-h) cmd_help ;;
