@@ -141,7 +141,7 @@ cmd_start() {
     done
 
     # Small delay for sessions to initialize
-    sleep 0.5
+    sleep 1
 
     info "Loading inner config..."
     ${TMO} send-keys "${TMI} source-file '${CACHE_DIR}/inner.conf'" C-m
