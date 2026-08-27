@@ -1,6 +1,17 @@
-# multmux
+# `multmux`
 
-A tmux session multiplexer that gives you multiple isolated sessions in one layout, using two separate tmux sockets to prevent recursive-attach pitfalls.
+~~A multi-dimensional tmux-in-tmux session multiplexer giving you multiple isolated sessions in one infinitely configurable and extensible layout.~~
+
+~~A proof you can write clean and compact code in Bash.~~
+
+A wrapper that will make you feel like a `tmux` wizard with only two shortcuts.
+
+With the provided default `tmux` config, click on a line separator to resize panes, click in a pane to select/activate it. Then:
+- `ctrl+b z` to zoom in and out of a pane
+- `ctrl+a s` then up and down arrow and hit `return` on the session you want to select for the main pane (you may need to click on the main pane to activate it first)
+
+> [!CAUTION]
+> If the mouse or shortcuts above don't work, it's most likely because you have a broken `tmux.conf`. You can fix it, but we recommend you use [the bundled one](https://github.com/DenisDupeyron/multmux/blob/main/defaults/tmux.conf) (it's only installed automatically if there is no pre-existing one).
 
 ## One-liner install
 
@@ -8,24 +19,26 @@ A tmux session multiplexer that gives you multiple isolated sessions in one layo
 curl -fsSL https://raw.githubusercontent.com/DenisDupeyron/multmux/main/install.sh | bash
 ```
 
+Or:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/DenisDupeyron/multmux/main/install.sh | bash
+```
+
 ### Requirements
 
-- **bash** >= 4
-- **tmux** >= 3.2
+- `bash` >= 4
+- `tmux` >= 3.2
 - `curl` or `wget`
-
-The installer checks all dependencies and fails loudly if anything is missing.
 
 ## What it does
 
-multmux creates a tmux layout with:
+`multmux` creates a `tmux` layout with:
 
-- A **main pane** (left, 60% width) running multiple inner sessions you can switch between using standard tmux shortcuts
-- **Overflow panes** (right, stacked vertically) for monitoring, quick commands, etc. which persist across session switches
+- A **main pane** (left, 60% width by default) running multiple inner sessions you can switch between using standard `tmux` shortcuts
+- **Overflow panes** (right, stacked vertically, 3 by default) for monitoring, quick commands, etc., which persist across session switches
 
-The key insight: inner sessions run on a separate tmux socket (`multmux-inner`) from the outer layout (`multmux-outer`). This prevents the infinite-nesting problem that occurs when you attach tmux inside tmux on the same server/socket.
-
-Neither socket uses the default tmux socket, so your regular `tmux` usage is completely unaffected.
+Neither socket uses the default `tmux` socket, so your regular `tmux` usage is completely unaffected.
 
 ## Usage
 
@@ -51,7 +64,7 @@ Asks for confirmation, then kills all inner sessions and the outer session.
 
 ### `update`
 
-Re-runs the install script to fetch the latest `multmux` script from GitHub. Your config at `~/.config/multmux.conf` and tmux.conf are left untouched since the installer only writes them if they do not already exist.
+Re-runs the install script to fetch the latest `multmux` script from GitHub. Your config at `~/.config/multmux.conf` and `tmux.conf` are left untouched since the installer only writes them if they do not already exist.
 
 ### `add` / `remove`
 
@@ -99,7 +112,7 @@ EOF
 )
 ```
 
-The tmux config blocks use standard tmux syntax - just paste your settings between the `EOF` markers.
+The `tmux` config blocks use standard `tmux` syntax, just paste your settings between the `EOF` markers.
 
 ## Uninstall
 

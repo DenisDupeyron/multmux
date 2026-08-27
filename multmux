@@ -17,10 +17,10 @@
 
 set -euo pipefail
 
-# multmux - tmux session multiplexer using two isolated sockets
+# multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="multmux-outer"
@@ -31,7 +31,10 @@ REPO_URL="https://raw.githubusercontent.com/DenisDupeyron/multmux/main"
 
 # --- Helpers ---
 
-die() { echo "error: $*" >&2; exit 1; }
+die() {
+    echo "error: $*" >&2
+    exit 1
+}
 warn() { echo "warning: $*" >&2; }
 info() { echo "multmux: $*"; }
 
@@ -47,8 +50,8 @@ ensure_cache_dir() {
 
 write_temp_configs() {
     ensure_cache_dir
-    printf '%s\n' "${BASE_CONF}" "${OUTER_CONF}" > "${CACHE_DIR}/outer.conf"
-    printf '%s\n' "${BASE_CONF}" "${INNER_CONF}" > "${CACHE_DIR}/inner.conf"
+    printf '%s\n' "${BASE_CONF}" "${OUTER_CONF}" >"${CACHE_DIR}/outer.conf"
+    printf '%s\n' "${BASE_CONF}" "${INNER_CONF}" >"${CACHE_DIR}/inner.conf"
 }
 
 outer_running() {
@@ -73,7 +76,7 @@ next_session_number() {
     if [[ -z "${last}" ]]; then
         echo "01"
     else
-        printf "%02d" $(( 10#${last} + 1 ))
+        printf "%02d" $((10#${last} + 1))
     fi
 }
 
@@ -88,8 +91,11 @@ cmd_start() {
     local no_attach=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --no-attach) no_attach=true; shift ;;
-            *) die "Unknown option: $1" ;;
+        --no-attach)
+            no_attach=true
+            shift
+            ;;
+        *) die "Unknown option: $1" ;;
         esac
     done
 
@@ -244,7 +250,7 @@ cmd_remove() {
             fi
         fi
         prev="${sess}"
-    done <<< "${sessions}"
+    done <<<"${sessions}"
 
     if [[ -z "${target}" ]]; then
         # Fallback: pick any session that isn't current
@@ -271,7 +277,7 @@ cmd_list() {
         else
             echo "    ${sess}"
         fi
-    done <<< "$(inner_session_list)"
+    done <<<"$(inner_session_list)"
 }
 
 cmd_update() {
@@ -290,7 +296,7 @@ cmd_update() {
 }
 
 cmd_help() {
-    cat << EOF
+    cat <<EOF
 multmux ${VERSION} - tmux session multiplexer
 
 Usage: multmux <command> [options]
@@ -311,13 +317,28 @@ EOF
 # --- Main dispatch ---
 
 case "${1:-help}" in
-    start)  shift; cmd_start "$@" ;;
-    stop)   shift; cmd_stop "$@" ;;
-    add)    shift; cmd_add "$@" ;;
-    remove) shift; cmd_remove "$@" ;;
-    list)   cmd_list ;;
-    update) shift; cmd_update "$@" ;;
-    help|--help|-h) cmd_help ;;
-    version|--version|-v) echo "multmux ${VERSION}" ;;
-    *)      die "Unknown command: $1. Run 'multmux help' for usage." ;;
+start)
+    shift
+    cmd_start "$@"
+    ;;
+stop)
+    shift
+    cmd_stop "$@"
+    ;;
+add)
+    shift
+    cmd_add "$@"
+    ;;
+remove)
+    shift
+    cmd_remove "$@"
+    ;;
+list) cmd_list ;;
+update)
+    shift
+    cmd_update "$@"
+    ;;
+help | --help | -h) cmd_help ;;
+version | --version | -v) echo "multmux ${VERSION}" ;;
+*) die "Unknown command: $1. Run 'multmux help' for usage." ;;
 esac
