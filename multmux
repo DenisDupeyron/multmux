@@ -20,11 +20,11 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.2.3"
+VERSION="0.2.4"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
-OUTER_SOCKET="multmux-outer"
-INNER_SOCKET="multmux-inner"
+OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
+INNER_SOCKET="${MULTMUX_INNER_SOCKET:-multmux-inner}"
 TMO="tmux -L ${OUTER_SOCKET}"
 TMI="tmux -L ${INNER_SOCKET}"
 REPO_URL="https://raw.githubusercontent.com/DenisDupeyron/multmux/main"

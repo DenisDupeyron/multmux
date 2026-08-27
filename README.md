@@ -161,3 +161,13 @@ Two sockets ensure:
 1. No infinite nesting: outer and inner are completely isolated
 2. No conflict with the user's own `tmux` sessions (default socket untouched)
 3. Commands like `multmux stop` can safely kill one server without affecting the other or the user's sessions
+
+## Development
+
+The socket names are normally fixed (`multmux-outer` and `multmux-inner`), but they can be overridden with environment variables. This is mainly useful for testing changes without touching the sockets of a real, running multmux session:
+
+```bash
+MULTMUX_OUTER_SOCKET=multmux-outer-test MULTMUX_INNER_SOCKET=multmux-inner-test ./multmux
+```
+
+If the variables are not set, the defaults are used.
