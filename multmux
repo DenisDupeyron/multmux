@@ -42,6 +42,12 @@ load_config() {
     [[ -f "${CONF_FILE}" ]] || die "Config not found: ${CONF_FILE}"
     # shellcheck disable=SC1090
     source "${CONF_FILE}"
+
+    local required_vars=(START_DIR MAIN_PANE_WIDTH OVERFLOW_PANES INNER_SESSIONS BASE_CONF OUTER_CONF INNER_CONF)
+    local var
+    for var in "${required_vars[@]}"; do
+        [[ -n "${!var+x}" ]] || die "Config ${CONF_FILE} is missing required variable: ${var}"
+    done
 }
 
 ensure_cache_dir() {
