@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.2.1"
+VERSION="0.2.2"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="multmux-outer"
@@ -95,6 +95,27 @@ next_session_number() {
 current_inner_session() {
     # The inner client in the main pane. Ask the inner server for its current session
     ${TMI} display-message -p '#{session_name}' 2>/dev/null
+}
+
+validate_session_name() {
+    # tmux uses ':' to separate session from window, and '.' to separate
+    # window from pane, in target specifiers (e.g. session:window.pane).
+    # A session name containing either breaks '-t <name>' addressing later,
+    # even though tmux happily creates/renames a session with such a name.
+    local name="$1"
+
+    if [[ -z "${name}" ]]; then
+        die "Session name cannot be empty."
+    fi
+    if [[ "${name}" == *$'\n'* ]]; then
+        die "Session name cannot contain newlines."
+    fi
+    if [[ "${name}" == *:* ]]; then
+        die "Session name cannot contain ':' (reserved by tmux for session:window targets)."
+    fi
+    if [[ "${name}" == *.* ]]; then
+        die "Session name cannot contain '.' (reserved by tmux for window.pane targets)."
+    fi
 }
 
 # --- Subcommands ---
@@ -346,6 +367,37 @@ cmd_remove() {
     info "Removed ${current}, switched to ${target}."
 }
 
+cmd_rename() {
+    if [[ $# -ne 1 ]]; then
+        die "Usage: multmux rename <new-name>"
+    fi
+    local new_name="$1"
+    validate_session_name "${new_name}"
+
+    if ! inner_running; then
+        die "multmux is not running. Use 'multmux start' first."
+    fi
+
+    local current
+    current=$(current_inner_session)
+
+    if [[ -z "${current}" ]]; then
+        die "Cannot determine current inner session."
+    fi
+
+    if [[ "${new_name}" == "${current}" ]]; then
+        info "Session is already named '${new_name}'."
+        return 0
+    fi
+
+    if inner_session_list | grep -qx "${new_name}"; then
+        die "A session named '${new_name}' already exists."
+    fi
+
+    ${TMI} rename-session -t "${current}" "${new_name}"
+    info "Renamed ${current} to ${new_name}."
+}
+
 cmd_list() {
     if ! inner_running; then
         die "multmux is not running."
@@ -392,6 +444,7 @@ Commands:
   detach                Detach from multmux, from anywhere (idempotent)
   add                   Add a new inner session and switch to it
   remove                Remove current inner session
+  rename <name>         Rename the current inner session
   list                  List inner sessions
   reset-layout          Reset outer pane geometry to configured sizes
   update                Update multmux to the latest version
@@ -427,6 +480,10 @@ add)
 remove)
     shift
     cmd_remove "$@"
+    ;;
+rename)
+    shift
+    cmd_rename "$@"
     ;;
 list) cmd_list ;;
 reset-layout)

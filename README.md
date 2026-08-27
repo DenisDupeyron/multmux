@@ -49,6 +49,7 @@ multmux attach                # Attach to the outer session (idempotent)
 multmux detach                # Detach from multmux, from anywhere (idempotent)
 multmux add                   # Add a new inner session and switch to it
 multmux remove                # Remove current inner session
+multmux rename <name>         # Rename the current inner session
 multmux list                  # List inner sessions
 multmux reset-layout          # Reset outer pane geometry to configured sizes
 multmux update                # Update multmux to the latest version
@@ -80,6 +81,10 @@ Re-runs the install script to fetch the latest `multmux` script from GitHub. You
 `add` creates a new inner session and switches to it immediately.
 
 `remove` kills the current inner session and switches to the previous one. If it's the last session, a fresh replacement is created automatically (the main pane is never left empty).
+
+### `rename`
+
+Renames the current inner session to the given name. Rejects empty names, names already in use, and names containing `:` or `.`, since tmux reserves those characters for `session:window.pane` targets and a session with either in its name can't be addressed reliably afterwards.
 
 ### `reset-layout`
 
