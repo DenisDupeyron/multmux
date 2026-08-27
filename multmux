@@ -81,20 +81,6 @@ current_inner_session() {
     ${TMI} display-message -p '#{session_name}' 2>/dev/null
 }
 
-has_running_processes() {
-    # Check if any inner pane has a foreground process that isn't a shell
-    local pane_pids
-    pane_pids=$(${TMI} list-panes -a -F '#{pane_pid}' 2>/dev/null)
-    for pid in ${pane_pids}; do
-        local children
-        children=$(pgrep -P "${pid}" 2>/dev/null || true)
-        if [[ -n "${children}" ]]; then
-            return 0
-        fi
-    done
-    return 1
-}
-
 # --- Subcommands ---
 
 cmd_start() {
@@ -166,38 +152,19 @@ cmd_start() {
 }
 
 cmd_stop() {
-    local force=false
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --force) force=true; shift ;;
-            *) die "Unknown option: $1" ;;
-        esac
-    done
+    if [[ $# -gt 0 ]]; then
+        die "Unknown option: $1"
+    fi
 
     if ! outer_running && ! inner_running; then
         info "Not running."
         return 0
     fi
 
-    if [[ "${force}" == true ]]; then
-        read -r -p "Kill all multmux sessions? [y/N] " confirm
-        if [[ "${confirm}" != [yY] ]]; then
-            info "Aborted."
-            return 0
-        fi
-        info "Killing inner sessions..."
-        ${TMI} kill-server 2>/dev/null || true
-        info "Killing outer session..."
-        ${TMO} kill-server 2>/dev/null || true
-        info "Stopped."
+    read -r -p "Kill all multmux sessions? [y/N] " confirm
+    if [[ "${confirm}" != [yY] ]]; then
+        info "Aborted."
         return 0
-    fi
-
-    # Without --force, check for running processes
-    if inner_running && has_running_processes; then
-        warn "Processes are still running in inner sessions."
-        echo "  Use 'multmux list' to inspect, or 'multmux stop --force' to kill everything."
-        return 1
     fi
 
     info "Killing inner sessions..."
@@ -314,7 +281,7 @@ Usage: multmux <command> [options]
 
 Commands:
   start [--no-attach]   Start multmux (idempotent)
-  stop [--force]        Stop multmux sessions
+  stop                  Stop multmux sessions (asks for confirmation)
   add                   Add a new inner session and switch to it
   delete                Delete current inner session
   list                  List inner sessions

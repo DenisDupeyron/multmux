@@ -31,7 +31,7 @@ Neither socket uses the default tmux socket, so your regular `tmux` usage is com
 
 ```bash
 multmux start [--no-attach]   # Start multmux (idempotent)
-multmux stop [--force]        # Stop all sessions
+multmux stop                  # Stop all sessions (asks for confirmation)
 multmux add                   # Add a new inner session and switch to it
 multmux delete                # Delete current inner session
 multmux list                  # List inner sessions
@@ -46,9 +46,7 @@ Creates the outer layout and inner sessions. If already running, attaches to the
 
 ### `stop`
 
-Without `--force`: checks for running processes in inner sessions and warns if any are found.
-
-With `--force`: asks for confirmation, then kills everything.
+Asks for confirmation, then kills all inner sessions and the outer session.
 
 ### `add` / `delete`
 
