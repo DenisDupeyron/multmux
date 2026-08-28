@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.3.1"
+VERSION="0.4.0"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -325,6 +325,8 @@ cmd_start() {
         *) die "Unknown option: $1" ;;
         esac
     done
+
+    check_for_update
 
     if outer_running; then
         info "Already running."
@@ -672,11 +674,51 @@ cmd_auto_rename() {
     fi
 }
 
-cmd_update() {
-    if [[ $# -gt 0 ]]; then
-        die "Unknown option: $1"
-    fi
+# --- Auto-update check ---
+#
+# The check itself always runs from cmd_start (both the fast "already
+# running" path and a real start) once every AUTO_UPDATE_CHECK_INTERVAL_DAYS
+# -- it's not optional. AUTO_UPDATE only controls what happens once a newer
+# version is actually found: install it automatically, or just leave a
+# notice for the user to run 'multmux update' themselves. Either way this
+# never blocks cmd_start and never fails loudly. See also the standalone
+# 'check-update' subcommand for an on-demand check.
 
+# Is version $1 strictly greater than version $2? A boolean predicate:
+# like any bash predicate returning 1 for "false" (e.g. a bare [[ ]]),
+# it must only be called from if/while/&&/||/! -- calling it bare would
+# abort the whole script under set -e whenever the answer is false.
+version_gt() {
+    if [[ "$1" == "$2" ]]; then
+        return 1
+    fi
+    [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" == "$1" ]]
+}
+
+# Print the latest VERSION from the repo's multmux script, or nothing on
+# any failure (offline, timeout, GitHub down, ...). $1 is the curl/wget
+# timeout in seconds. Fetches into a variable and matches with bash's own
+# regex instead of piping through grep/cut: with a live network transfer,
+# a downstream stage (e.g. grep -m1) exiting as soon as it matches can
+# close the pipe while curl is still writing, killing it with SIGPIPE and
+# -- combined with pipefail -- aborting this whole check under set -e.
+fetch_latest_version() {
+    local timeout="${1:-3}" content=""
+    if command -v curl &>/dev/null; then
+        content="$(curl -fsSL --max-time "${timeout}" "${REPO_URL}/multmux" 2>/dev/null)" || true
+    elif command -v wget &>/dev/null; then
+        content="$(wget -qO- --timeout="${timeout}" "${REPO_URL}/multmux" 2>/dev/null)" || true
+    fi
+    if [[ "${content}" =~ VERSION=\"([0-9]+\.[0-9]+\.[0-9]+)\" ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+    fi
+    return 0
+}
+
+# Actually fetch and install the latest multmux (what 'multmux update'
+# does), shared with the auto-update path so both go through the same
+# code. Output is visible; the caller decides whether to silence it.
+perform_update() {
     info "Fetching install script from ${REPO_URL}..."
     if command -v curl &>/dev/null; then
         curl -fsSL "${REPO_URL}/install.sh" | bash
@@ -685,6 +727,123 @@ cmd_update() {
     else
         die "Neither curl nor wget found."
     fi
+}
+
+# Print a one-line notice about the last check, if there's anything to
+# report: either that an auto-update already happened, or that a newer
+# version is available. Safe to call even if no check has ever run yet.
+show_update_notice_if_cached() {
+    if [[ -f "${CACHE_DIR}/just_auto_updated" ]]; then
+        rm -f "${CACHE_DIR}/just_auto_updated"
+        info "multmux was automatically updated to v${VERSION}."
+        return 0
+    fi
+    [[ -f "${CACHE_DIR}/latest_version" ]] || return 0
+    local latest
+    latest="$(cat "${CACHE_DIR}/latest_version" 2>/dev/null)" || return 0
+    [[ -n "${latest}" ]] || return 0
+    if version_gt "${latest}" "${VERSION}"; then
+        info "A newer multmux is available: v${latest} (you have v${VERSION}). Run 'multmux update' to install it."
+    fi
+    return 0
+}
+
+# Read AUTO_UPDATE and AUTO_UPDATE_CHECK_INTERVAL_DAYS from CONF_FILE on
+# their own, independently of load_config, so a broken config can never
+# break starting/attaching. Falls back to defaults if CONF_FILE is
+# missing, broken, or doesn't set them.
+read_update_settings() {
+    AUTO_UPDATE=true
+    AUTO_UPDATE_CHECK_INTERVAL_DAYS=7
+    [[ -f "${CONF_FILE}" ]] || return 0
+    local vals
+    vals="$(
+        # shellcheck disable=SC1090
+        source "${CONF_FILE}" &>/dev/null
+        printf '%s\n%s\n' "${AUTO_UPDATE}" "${AUTO_UPDATE_CHECK_INTERVAL_DAYS}"
+    )" 2>/dev/null || return 0
+    [[ -n "${vals}" ]] || return 0
+    AUTO_UPDATE="$(sed -n '1p' <<<"${vals}")"
+    AUTO_UPDATE_CHECK_INTERVAL_DAYS="$(sed -n '2p' <<<"${vals}")"
+    return 0
+}
+
+# Show any pending notice immediately, then -- once every
+# AUTO_UPDATE_CHECK_INTERVAL_DAYS, unconditionally -- check in the
+# background for a newer version. If found, install it right away when
+# AUTO_UPDATE is true, otherwise just cache it for the next notice. Never
+# blocks and never fails loudly: no network, no GitHub, no problem.
+check_for_update() {
+    local auto_update interval_days
+    read_update_settings
+    auto_update="${AUTO_UPDATE}"
+    interval_days="${AUTO_UPDATE_CHECK_INTERVAL_DAYS}"
+
+    ensure_cache_dir
+    show_update_notice_if_cached
+
+    local now last_check interval_secs
+    now=$(date +%s)
+    last_check=0
+    [[ -f "${CACHE_DIR}/last_update_check" ]] && last_check="$(cat "${CACHE_DIR}/last_update_check" 2>/dev/null || echo 0)"
+    [[ "${last_check}" =~ ^[0-9]+$ ]] || last_check=0
+    interval_secs=$((interval_days * 86400))
+    ((now - last_check < interval_secs)) && return 0
+
+    # Record the attempt immediately so rapid repeated invocations don't
+    # all spawn their own background check at once.
+    echo "${now}" >"${CACHE_DIR}/last_update_check"
+
+    (
+        latest="$(fetch_latest_version 3)"
+        if [[ -n "${latest}" ]] && version_gt "${latest}" "${VERSION}"; then
+            if [[ "${auto_update}" == true ]]; then
+                if perform_update &>/dev/null; then
+                    touch "${CACHE_DIR}/just_auto_updated"
+                fi
+            else
+                echo "${latest}" >"${CACHE_DIR}/latest_version"
+            fi
+        fi
+    ) &>/dev/null &
+    disown
+    return 0
+}
+
+cmd_check_update() {
+    if [[ $# -gt 0 ]]; then
+        die "Unknown option: $1"
+    fi
+
+    read_update_settings
+    ensure_cache_dir
+    info "Checking for updates..."
+    local latest
+    latest="$(fetch_latest_version 5)"
+    [[ -n "${latest}" ]] || die "Could not check for updates (network unavailable?)."
+
+    date +%s >"${CACHE_DIR}/last_update_check"
+
+    if version_gt "${latest}" "${VERSION}"; then
+        rm -f "${CACHE_DIR}/latest_version"
+        if [[ "${AUTO_UPDATE}" == true ]]; then
+            info "A newer multmux is available: v${latest} (you have v${VERSION}). Updating..."
+            perform_update
+        else
+            echo "${latest}" >"${CACHE_DIR}/latest_version"
+            info "A newer multmux is available: v${latest} (you have v${VERSION}). Run 'multmux update' to install it."
+        fi
+    else
+        rm -f "${CACHE_DIR}/latest_version"
+        info "multmux is up to date (v${VERSION})."
+    fi
+}
+
+cmd_update() {
+    if [[ $# -gt 0 ]]; then
+        die "Unknown option: $1"
+    fi
+    perform_update
 }
 
 cmd_help() {
@@ -703,6 +862,7 @@ Commands:
   rename <name>         Rename the current inner session
   list                  List inner sessions
   reset-layout          Reset outer pane geometry to configured sizes
+  check-update          Check now whether a newer version is available
   update                Update multmux to the latest version
   help                  Show this help
 
@@ -749,6 +909,10 @@ _auto-rename)
 reset-layout)
     shift
     cmd_reset_layout "$@"
+    ;;
+check-update)
+    shift
+    cmd_check_update "$@"
     ;;
 update)
     shift

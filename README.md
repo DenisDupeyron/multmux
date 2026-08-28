@@ -52,6 +52,7 @@ multmux remove                # Remove the current inner session
 multmux rename <name>         # Rename the current inner session
 multmux list                  # List inner sessions
 multmux reset-layout          # Reset outer pane geometry to configured sizes
+multmux check-update          # Check now whether a newer version is available
 multmux update                # Update multmux to the latest version
 multmux help                  # Show help
 ```
@@ -72,9 +73,11 @@ Asks for confirmation, then kills all inner sessions and the outer session.
 
 `detach` detaches your terminal from the outer session, from anywhere (a separate terminal, an overflow pane, or an inner session). It's a no-op if you're not attached.
 
-### `update`
+### `check-update` / `update`
 
-Re-runs the install script to fetch the latest `multmux` script from GitHub. Your config at `~/.config/multmux.conf` and `tmux.conf` are left untouched since the installer only writes them if they do not already exist.
+`start` always checks for a newer version in the background on its own, at most once every `AUTO_UPDATE_CHECK_INTERVAL_DAYS` (see below). If `AUTO_UPDATE` is true (the default), it installs the newer version right away, automatically; if false, it just leaves a one-line notice. `check-update` does the same check immediately instead of waiting for the next `start`, and reports (or installs, per `AUTO_UPDATE`) right away.
+
+`update` unconditionally re-runs the install script to fetch the latest `multmux` script from GitHub, regardless of version. Your config at `~/.config/multmux.conf` and `tmux.conf` are left untouched since the installer only writes them if they do not already exist.
 
 ### `add` / `remove`
 
@@ -130,6 +133,16 @@ SESSION_NAME_COMPONENT_MAX=20
 # truncation, whole components are dropped from the left and replaced with
 # a single leading ellipsis. Must be at least SESSION_NAME_COMPONENT_MAX + 2.
 SESSION_NAME_TOTAL_MAX=60
+
+# How often (in days) 'multmux start' checks GitHub in the background, at
+# most, for a newer version.
+AUTO_UPDATE_CHECK_INTERVAL_DAYS=7
+
+# Whether a newer version found by that check is installed automatically.
+# If true (the default), it's installed right away. If false, multmux
+# only leaves a one-line notice and you install it yourself with
+# 'multmux update'.
+AUTO_UPDATE=true
 
 # Base tmux config applied to both outer and inner sessions
 BASE_CONF=$(cat << 'EOF'
