@@ -234,6 +234,18 @@ setup() {
     [ "${status}" -ne 0 ]
 }
 
+@test "name_in_use: a candidate containing '.' is matched literally, not as a regex wildcard" {
+    # As a BRE, "a.b" would also match the literal string "aXb". Fixed-
+    # string matching must not report a false collision here.
+    run name_in_use "a.b" "$(printf 'aXb\nother')" ""
+    [ "${status}" -ne 0 ]
+}
+
+@test "name_in_use: a candidate containing '.' still matches its own literal occurrence" {
+    run name_in_use "a.b" "$(printf 'a.b\nother')" ""
+    [ "${status}" -eq 0 ]
+}
+
 @test "unique_session_name: returns the candidate unchanged if free" {
     result="$(unique_session_name "abc" "$(printf 'xyz\nqrs')" "")"
     [ "${result}" = "abc" ]

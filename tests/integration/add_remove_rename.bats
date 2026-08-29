@@ -107,6 +107,17 @@ teardown() {
     [[ "${output}" == *"already exists"* ]]
 }
 
+@test "rename: a name with regex metacharacters overlapping another session's literal name is not falsely rejected" {
+    mm_start
+    # "~/-[12]" is a valid name (only ':' and '.' are rejected) that, if
+    # matched as a regex instead of a literal string, would look like it
+    # collides with the existing "~/-1"/"~/-2" sessions from mm_start.
+    run "${MULTMUX_SCRIPT}" rename "~/-[12]"
+    [ "${status}" -eq 0 ]
+    run tmux -L "${MULTMUX_INNER_SOCKET}" has-session -t "~/-[12]"
+    [ "${status}" -eq 0 ]
+}
+
 @test "rename: renaming to the session's own current name is a harmless no-op" {
     mm_start
     current="$(tmux -L "${MULTMUX_INNER_SOCKET}" list-clients -F '#{session_name}')"

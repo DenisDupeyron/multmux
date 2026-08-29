@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.1"
+VERSION="0.5.2"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -404,7 +404,7 @@ session_name_for_path() {
 name_in_use() {
     local name="$1" used_list="$2" exclude="$3"
     [[ -n "${exclude}" && "${name}" == "${exclude}" ]] && return 1
-    grep -qx -- "${name}" <<<"${used_list}"
+    grep -qFx -- "${name}" <<<"${used_list}"
 }
 
 unique_session_name() {
@@ -676,7 +676,7 @@ cmd_remove() {
 
     if [[ -z "${target}" ]]; then
         # Fallback: pick any session that isn't current
-        target=$(echo "${sessions}" | grep -v "^${current}$" | head -1)
+        target=$(echo "${sessions}" | grep -vFx -- "${current}" | head -1)
     fi
 
     ${TMI} switch-client -t "${target}"
@@ -707,7 +707,7 @@ cmd_rename() {
         return 0
     fi
 
-    if inner_session_list | grep -qx "${new_name}"; then
+    if inner_session_list | grep -qFx -- "${new_name}"; then
         die "A session named '${new_name}' already exists."
     fi
 
