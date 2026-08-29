@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.4.5"
+VERSION="0.4.6"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -1049,11 +1049,13 @@ config_var_value() {
     ) 2>/dev/null || true
 }
 
-# Report (never modify) lines present in $1's value of $3 that have no
-# exact match anywhere in $2's value of $3 (comments and blank lines
-# included, not just tmux commands). $1/$2 are full config texts (the
-# freshly-updated bundled default, and the user's own file's content).
-# $3 is one of BASE_CONF/OUTER_CONF/INNER_CONF.
+# Report (never modify) actual config lines present in $1's value of $3
+# that have no exact match anywhere in $2's value of $3. Blank lines and
+# comment-only lines are skipped entirely (on both sides): comments are
+# free-form prose that can be reworded across versions without changing
+# behavior, so diffing them would just be noise, not a real drift signal.
+# $1/$2 are full config texts (the freshly-updated bundled default, and
+# the user's own file's content). $3 is one of BASE_CONF/OUTER_CONF/INNER_CONF.
 report_block_drift() {
     local default_config="$1" conf_file="$2" block="$3"
     local default_value user_value
@@ -1064,6 +1066,7 @@ report_block_drift() {
     local line already ul
     while IFS= read -r line; do
         [[ -n "${line}" ]] || continue
+        [[ "${line}" =~ ^[[:space:]]*# ]] && continue
         already=false
         while IFS= read -r ul; do
             if [[ "${ul}" == "${line}" ]]; then
