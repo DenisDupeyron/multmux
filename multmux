@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.4.3"
+VERSION="0.4.4"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -639,9 +639,6 @@ cmd_start() {
     info "Starting outer session..."
     ${TMO} -f "${CACHE_DIR}/outer.conf" new-session -c "${START_DIR}" -d
 
-    # Unset TMUX in the main pane so inner sessions can start
-    ${TMO} send-keys "unset TMUX" C-m
-
     # All INNER_SESSIONS sessions start out in the same START_DIR, so they
     # collide on the same base name: assign them "-1", "-2", ... up front
     # ourselves (see use_dir_as_name.md) instead of querying tmux, since
@@ -655,6 +652,16 @@ cmd_start() {
         batch_names+=("${base_name}-${k}")
     done
 
+    # Start each inner session directly here in the script instead of by
+    # sending "new-session" as keystrokes into the outer pane. The outer
+    # pane's shell can still be starting up (sourcing profile scripts,
+    # etc.) right after new-session above returns, so send-keys into it
+    # races that startup: keystrokes sent before the shell is actually
+    # reading from its pty can be silently dropped, which is what caused
+    # fewer than INNER_SESSIONS inner sessions to show up sometimes.
+    # `tmux new-session -d` itself blocks until the session is actually
+    # created, so running it directly here has no such race and no
+    # longer needs the "small delay" that used to follow this loop.
     # Same -f rationale as the outer session above. It's included on
     # every call in this loop rather than just the very first one for
     # simplicity: tmux only actually loads a -f file when it boots a
@@ -665,11 +672,14 @@ cmd_start() {
     local session idx
     for session in $(seq "${INNER_SESSIONS}" -1 1); do
         idx=$((session - 1))
-        ${TMO} send-keys "${TMI} -f '${CACHE_DIR}/inner.conf' new-session -s '${batch_names[idx]}' -c '${START_DIR}' -d" C-m
+        ${TMI} -f "${CACHE_DIR}/inner.conf" new-session -s "${batch_names[idx]}" -c "${START_DIR}" -d
     done
 
-    # Small delay for sessions to initialize
-    sleep 1
+    # Unset TMUX in the main pane so the inner attach below isn't treated
+    # as a nested session. By now the outer pane's shell has had the
+    # entire loop above to finish starting up, which also makes these two
+    # send-keys calls far less likely to race the shell than before.
+    ${TMO} send-keys "unset TMUX" C-m
 
     info "Attaching to inner ${batch_names[0]}..."
     ${TMO} send-keys "${TMI} attach -t '${batch_names[0]}'" C-m
