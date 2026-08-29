@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.4.4"
+VERSION="0.4.5"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -149,6 +149,10 @@ set -g window-status-format ""
 set -g window-status-current-format ""
 set -g status-left-length 80
 set -g status on
+# Force a status-line repaint every second so the CWD-based session rename
+# (done asynchronously by the window-renamed hook below) shows up promptly
+# instead of waiting for the next keypress/output in the pane.
+set -g status-interval 1
 set-window-option -g automatic-rename on
 set-option -g automatic-rename-format "#{pane_current_path}"
 EOF
