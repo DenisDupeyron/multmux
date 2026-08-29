@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.7"
+VERSION="0.5.8"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -433,7 +433,10 @@ create_unique_session() {
     name="$(unique_session_name "${base}" "$(inner_session_list)")"
     if ! ${TMI} new-session -s "${name}" -c "${START_DIR}" -d 2>/dev/null; then
         name="$(unique_session_name "${base}" "$(inner_session_list)")"
-        ${TMI} new-session -s "${name}" -c "${START_DIR}" -d
+        # set -e doesn't propagate into this function's $(...) caller
+        # (command substitution subshells don't inherit errexit), so a
+        # second failure must be handled explicitly, not left to abort.
+        ${TMI} new-session -s "${name}" -c "${START_DIR}" -d || die "Could not create inner session '${name}'."
     fi
     printf '%s\n' "${name}"
 }

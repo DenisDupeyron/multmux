@@ -312,3 +312,16 @@ STUB
     [ "${output}" = "abc" ]
     [ "$(cat "${calls}")" -eq 2 ]
 }
+
+@test "create_unique_session: dies clearly if the retry also fails, instead of reporting bogus success" {
+    # Both attempts fail (persistent failure, not just a one-off race).
+    local stub="${BATS_TEST_TMPDIR}/fake_tmi_always_fails"
+    printf '#!/usr/bin/env bash\nexit 1\n' >"${stub}"
+    chmod +x "${stub}"
+    TMI="${stub}"
+    START_DIR="/tmp"
+    inner_session_list() { :; }
+    run create_unique_session "abc"
+    [ "${status}" -ne 0 ]
+    [[ "${output}" == *"error:"* ]]
+}
