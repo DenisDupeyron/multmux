@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.4.6"
+VERSION="0.4.7"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -1178,13 +1178,18 @@ check_for_update() {
     return 0
 }
 
-# Hidden: prints this exact version's canonical default config. Used by
-# cmd_update to fetch the freshly-installed version's DEFAULT_CONFIG for
-# the drift check below, since perform_update runs in a separate process
-# (install.sh) and replaces the file on disk without affecting the
-# currently-running (old) script's own already-loaded DEFAULT_CONFIG.
-cmd_default_config() {
-    printf '%s\n' "${DEFAULT_CONFIG}"
+# Hidden: runs the config drift check using THIS exact version's own
+# DEFAULT_CONFIG and its own report_block_drift logic. cmd_update always
+# re-execs SELF_PATH into this rather than calling check_tmux_config_drift
+# directly in-process, because perform_update runs in a separate process
+# (install.sh) that replaces the file on disk without affecting anything
+# the currently-running (old) script already has loaded, and that's not
+# just the DEFAULT_CONFIG text: the comparison logic itself (e.g. which
+# lines count as real drift vs. just reworded comments) can change
+# between versions too, so it has to come from the freshly-installed
+# code, not from whatever this process happened to start with.
+cmd_check_config_drift() {
+    check_tmux_config_drift "${DEFAULT_CONFIG}"
 }
 
 # Fetch the latest version and report whether it's newer, caching the
@@ -1230,16 +1235,12 @@ cmd_update() {
 
     perform_update
 
-    # Re-run whatever is now at SELF_PATH (not a hardcoded install
+    # Re-exec whatever is now at SELF_PATH (not a hardcoded install
     # location, perform_update always overwrites that exact file, see
-    # resolve_self_path/the atomic-rename note in install.sh) to get the
-    # freshly-installed version's own DEFAULT_CONFIG. This process is
-    # still running the old code, so it can't see that directly itself.
-    local new_default_config
-    new_default_config="$("${SELF_PATH}" _default-config 2>/dev/null)" || true
-    if [[ -n "${new_default_config}" ]]; then
-        check_tmux_config_drift "${new_default_config}"
-    fi
+    # resolve_self_path/the atomic-rename note in install.sh) to run the
+    # freshly-installed version's own drift check end to end. This
+    # process is still running the old code, so it can't do that itself.
+    "${SELF_PATH}" _check-config-drift || true
 }
 
 cmd_help() {
@@ -1301,7 +1302,7 @@ _auto-rename)
     shift
     cmd_auto_rename "$@"
     ;;
-_default-config) cmd_default_config ;;
+_check-config-drift) cmd_check_config_drift ;;
 reset-layout)
     shift
     cmd_reset_layout "$@"
