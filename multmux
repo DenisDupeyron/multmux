@@ -20,14 +20,16 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.4.7"
+VERSION="0.4.8"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
 INNER_SOCKET="${MULTMUX_INNER_SOCKET:-multmux-inner}"
 TMO="tmux -L ${OUTER_SOCKET}"
 TMI="tmux -L ${INNER_SOCKET}"
-REPO_URL="https://raw.githubusercontent.com/DenisDupeyron/multmux/main"
+# Overridable so tests can point this at a local fake server instead of
+# real GitHub (see tests/), same pattern as the socket overrides above.
+REPO_URL="${MULTMUX_REPO_URL:-https://raw.githubusercontent.com/DenisDupeyron/multmux/main}"
 
 # The canonical default config for this exact version, embedded so
 # config reconciliation after an update (see below) never needs a
@@ -853,9 +855,16 @@ cmd_remove() {
     if [[ "${count}" -le 1 ]]; then
         # Last session. Kill it and create a fresh one
         info "Last session. Creating a replacement..."
+        # Deliberately no "exclude=current" here (unlike rename's use of
+        # unique_session_name): the replacement briefly coexists with the
+        # not-yet-killed current session (it has to, to switch the client
+        # away before killing it), so a same-named replacement would
+        # collide with tmux itself ("duplicate session"), not just
+        # logically. current's own name must count as taken until it's
+        # actually killed below.
         local base name
         base="$(session_name_for_path "${START_DIR}")"
-        name="$(unique_session_name "${base}" "${sessions}" "${current}")"
+        name="$(unique_session_name "${base}" "${sessions}")"
         ${TMI} new-session -s "${name}" -c "${START_DIR}" -d
         ${TMI} source-file "${CACHE_DIR}/inner.conf"
         ${TMI} switch-client -t "${name}"
@@ -1268,50 +1277,56 @@ EOF
 
 # --- Main dispatch ---
 
-case "${1:-help}" in
-start)
-    shift
-    cmd_start "$@"
-    ;;
-stop)
-    shift
-    cmd_stop "$@"
-    ;;
-attach)
-    shift
-    cmd_attach "$@"
-    ;;
-detach)
-    shift
-    cmd_detach "$@"
-    ;;
-add)
-    shift
-    cmd_add "$@"
-    ;;
-remove)
-    shift
-    cmd_remove "$@"
-    ;;
-rename)
-    shift
-    cmd_rename "$@"
-    ;;
-list) cmd_list ;;
-_auto-rename)
-    shift
-    cmd_auto_rename "$@"
-    ;;
-_check-config-drift) cmd_check_config_drift ;;
-reset-layout)
-    shift
-    cmd_reset_layout "$@"
-    ;;
-update)
-    shift
-    cmd_update "$@"
-    ;;
-help | --help | -h) cmd_help ;;
-version | --version | -v) echo "multmux ${VERSION}" ;;
-*) die "Unknown command: $1. Run 'multmux help' for usage." ;;
-esac
+# Guarded so tests can `source` this file to get at its functions/vars
+# without also running the CLI dispatch below (which `${0}` vs
+# `${BASH_SOURCE[0]}` distinguishes: they're equal only when the script
+# is executed directly, not sourced).
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    case "${1:-help}" in
+    start)
+        shift
+        cmd_start "$@"
+        ;;
+    stop)
+        shift
+        cmd_stop "$@"
+        ;;
+    attach)
+        shift
+        cmd_attach "$@"
+        ;;
+    detach)
+        shift
+        cmd_detach "$@"
+        ;;
+    add)
+        shift
+        cmd_add "$@"
+        ;;
+    remove)
+        shift
+        cmd_remove "$@"
+        ;;
+    rename)
+        shift
+        cmd_rename "$@"
+        ;;
+    list) cmd_list ;;
+    _auto-rename)
+        shift
+        cmd_auto_rename "$@"
+        ;;
+    _check-config-drift) cmd_check_config_drift ;;
+    reset-layout)
+        shift
+        cmd_reset_layout "$@"
+        ;;
+    update)
+        shift
+        cmd_update "$@"
+        ;;
+    help | --help | -h) cmd_help ;;
+    version | --version | -v) echo "multmux ${VERSION}" ;;
+    *) die "Unknown command: $1. Run 'multmux help' for usage." ;;
+    esac
+fi

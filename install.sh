@@ -20,12 +20,17 @@ set -euo pipefail
 # multmux installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/DenisDupeyron/multmux/main/install.sh | bash
 
-REPO_URL="https://raw.githubusercontent.com/DenisDupeyron/multmux/main"
+# Overridable so tests can point this at a local fake server instead of
+# real GitHub (see tests/), same pattern used by multmux itself.
+REPO_URL="${MULTMUX_REPO_URL:-https://raw.githubusercontent.com/DenisDupeyron/multmux/main}"
 INSTALL_DIR="${HOME}/.local/bin"
 CONF_DIR="${HOME}/.config"
 
 info() { echo "[multmux] $*"; }
-die() { echo "[multmux] ERROR: $*" >&2; exit 1; }
+die() {
+    echo "[multmux] ERROR: $*" >&2
+    exit 1
+}
 
 # --- Dependency checks ---
 
@@ -34,12 +39,12 @@ info "Checking dependencies..."
 # Bash version
 bash_major="${BASH_VERSINFO[0]}"
 if [[ "${bash_major}" -lt 4 ]]; then
-    die "bash >= 4 required (found ${BASH_VERSION}). Install with: brew install bash"
+    die "bash >= 4 required (found ${BASH_VERSION})."
 fi
 
 # tmux
 if ! command -v tmux &>/dev/null; then
-    die "tmux is not installed. Install with: brew install tmux (macOS) or apt install tmux (Linux)"
+    die "tmux is not installed."
 fi
 
 tmux_version=$(tmux -V | grep -oE '[0-9]+\.[0-9]+')

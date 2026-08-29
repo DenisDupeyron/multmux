@@ -267,3 +267,15 @@ MULTMUX_OUTER_SOCKET=multmux-outer-test MULTMUX_INNER_SOCKET=multmux-inner-test 
 ```
 
 If the variables are not set, the defaults are used.
+
+### Running the tests
+
+The test suite uses [bats-core](https://github.com/bats-core/bats-core):
+
+```bash
+bats tests/unit          # pure-logic tests, no tmux, fast
+bats tests/integration   # real tmux against throwaway sockets/config, slower
+bats tests/unit tests/integration   # everything
+```
+
+See `tests/README.md` for what each suite covers and the specific failure modes tested.
