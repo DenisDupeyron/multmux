@@ -63,6 +63,14 @@ setup() {
     [ "${status}" -eq 1 ]
 }
 
+@test "reconcile_missing_vars: healing a completely empty config does not append a spurious trailing blank line" {
+    : >"${HOME}/.config/multmux.conf"
+    run bash -c 'source "'"${MULTMUX_SCRIPT}"'"; reconcile_missing_vars "AUTO_UPDATE"'
+    [ "${status}" -eq 0 ]
+    last_line="$(tail -1 "${HOME}/.config/multmux.conf")"
+    [ "${last_line}" = "AUTO_UPDATE=true" ]
+}
+
 @test "reconcile_missing_vars: splices a genuinely missing (but known-default) variable into the file and reports it" {
     # Build a user config that's the real default minus the AUTO_UPDATE line.
     mm_install_default_config
