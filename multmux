@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.4.1"
+VERSION="0.4.2"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -28,6 +28,133 @@ INNER_SOCKET="${MULTMUX_INNER_SOCKET:-multmux-inner}"
 TMO="tmux -L ${OUTER_SOCKET}"
 TMI="tmux -L ${INNER_SOCKET}"
 REPO_URL="https://raw.githubusercontent.com/DenisDupeyron/multmux/main"
+
+# The canonical default config for this exact version, embedded so
+# config reconciliation after an update (see below) never needs a
+# network call and can never drift out of sync with the running script.
+# Keep this in sync with defaults/multmux.conf whenever either changes.
+DEFAULT_CONFIG=$(
+    cat <<'DEFAULT_CONFIG_EOF'
+# multmux configuration - sourced by multmux, do not execute directly
+# See: https://github.com/DenisDupeyron/multmux
+
+# The initial directory for each pane or session
+START_DIR="${HOME}"
+
+# Main pane width (columns or percentage)
+MAIN_PANE_WIDTH="60%"
+
+# Number of overflow panes stacked vertically on the right side
+OVERFLOW_PANES=3
+
+# Number of inner sessions at start in the main pane (maximum 99)
+INNER_SESSIONS=10
+
+# Inner sessions are automatically named/renamed from their current
+# directory (see use_dir_as_name.md). Any single path component longer
+# than this is truncated in its own middle, with an ellipsis.
+SESSION_NAME_COMPONENT_MAX=20
+
+# If the whole computed name is still longer than this after per-component
+# truncation, whole components are dropped from the left and replaced with
+# a single leading ellipsis. Must be at least SESSION_NAME_COMPONENT_MAX + 2.
+SESSION_NAME_TOTAL_MAX=60
+
+# How often (in days) 'multmux start' checks GitHub in the background, at
+# most, for a newer version.
+AUTO_UPDATE_CHECK_INTERVAL_DAYS=7
+
+# Whether a newer version found by that check is installed automatically.
+# If true (the default), it's installed right away. If false, multmux
+# only leaves a one-line notice and you install it yourself with
+# 'multmux update'.
+AUTO_UPDATE=true
+
+# Base tmux config applied to both outer and inner sessions. This is
+# loaded directly at server startup for each socket (see the -f flag in
+# 'multmux' itself), so your own ~/.config/tmux/tmux.conf or ~/.tmux.conf
+# is never read for multmux's sessions -- multmux is fully self-contained
+# and your regular tmux usage is never affected by it.
+BASE_CONF=$(cat << 'EOF'
+# Use vi-style keys in copy mode
+setw -g mode-keys vi
+
+# Advertise 256-color support to apps running inside tmux
+set default-terminal "screen-256color"
+# Unlike for other terminals, tmux doesn't auto-detect true color support in Alacritty
+set -as terminal-overrides ",alacritty*:Tc"
+
+# Let Ctrl-a also act as the prefix (keeps prefix usable across nested
+# outer/inner multmux sessions without needing to press it twice)
+bind-key -n C-a send-prefix
+# Prefix + Ctrl-s toggles synchronized input to all panes in the window
+bind C-s set-window-option synchronize-panes
+# Prefix + arrow keys selects the pane in that direction (explicit default)
+bind-key    Up    select-pane -U
+bind-key    Down  select-pane -D
+bind-key    Left  select-pane -L
+bind-key    Right select-pane -R
+
+# Prefix + s opens an interactive session picker, most recent activity first
+bind s choose-tree -Zs -O activity
+
+# Recognize Escape quickly so it isn't confused with escape sequences
+# (needed by modal editors, e.g. Neovim/lazy.vim)
+set-option -sg escape-time 10
+# Report terminal focus in/out events to apps that use them (e.g. editor autoread)
+set-option -g focus-events on
+
+# Report modified keys (Ctrl/Shift/Alt combos) to apps that request them
+# (used by many modern TUIs, e.g. opencode)
+set-option -g extended-keys on
+# Use the clearer CSI u wire format for those keys, understood by most
+# modern terminal apps and TUI libraries (e.g. opencode, prime-agent)
+set-option -g extended-keys-format csi-u
+
+# Enable mouse support: click to select/resize panes, wheel to scroll, etc.
+set -g mouse on
+# Scroll wheel: scroll pane history, or forward to the app if it wants mouse input
+bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'copy-mode -e; send-keys -M'"
+
+# Pick the clipboard command for this platform: pbcopy on macOS, else
+# wl-copy under Wayland, else xclip under X11
+if-shell "command -v pbcopy" \
+    "set -g @yank 'pbcopy'" \
+    "if-shell \"command -v wl-copy\" \"set -g @yank 'wl-copy'\" \"set -g @yank 'xclip -selection clipboard -in'\""
+
+# Fix select to copy due to above
+# Mouse drag-select copies the selection to the system clipboard
+bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "#{@yank}"
+# Double-click selects a word and copies it to the system clipboard
+bind -T copy-mode-vi DoubleClick1Pane select-pane \; send-keys -X select-word \; send-keys -X copy-pipe-and-cancel "#{@yank}"
+# Triple-click selects a line and copies it to the system clipboard
+bind -T copy-mode-vi TripleClick1Pane select-pane \; send-keys -X select-line \; send-keys -X copy-pipe-and-cancel "#{@yank}"
+
+# Keep more scrollback (helps when using multmux's overflow/monitoring panes)
+set -g history-limit 10000
+EOF
+)
+
+# Additional config for the outer session only
+OUTER_CONF=$(cat << 'EOF'
+set -g status off
+EOF
+)
+
+# Additional config for the inner sessions only
+INNER_CONF=$(cat << 'EOF'
+set -g status-left "#S"
+set -g status-right ""
+set -g window-status-format ""
+set -g window-status-current-format ""
+set -g status-left-length 80
+set -g status on
+set-window-option -g automatic-rename on
+set-option -g automatic-rename-format "#{pane_current_path}"
+EOF
+)
+DEFAULT_CONFIG_EOF
+)
 
 # Absolute path to this script itself, needed to reference it from inside a
 # tmux hook (run-shell commands don't reliably inherit the invoking shell's
@@ -68,16 +195,168 @@ die() {
 warn() { echo "warning: $*" >&2 || true; }
 info() { echo "multmux: $*" || true; }
 
+# Parse a multmux.conf-formatted string (used for both DEFAULT_CONFIG and
+# the user's own file) into:
+#   CONFIG_BLOCK_NAMES    -- ordered array of top-level variable names
+#   CONFIG_BLOCK_TEXT     -- assoc array: name -> its comment/blank lines
+#                            immediately above it, plus its own assignment
+#                            (a single line, or a "VAR=$(cat << 'EOF' ...
+#                            EOF)" heredoc), verbatim
+#   CONFIG_BLOCK_END_LINE -- assoc array: name -> the 1-based line number,
+#                            within the given content, of the last line of
+#                            that variable's own assignment
+# Doesn't look inside heredoc bodies for anything other than finding the
+# closing ')' that ends one.
+parse_config_blocks() {
+    local content="$1"
+    CONFIG_BLOCK_NAMES=()
+    declare -gA CONFIG_BLOCK_TEXT=()
+    declare -gA CONFIG_BLOCK_END_LINE=()
+
+    local pending="" varname="" in_heredoc=false current="" line_no=0 line
+    while IFS= read -r line; do
+        line_no=$((line_no + 1))
+        if [[ "${in_heredoc}" == true ]]; then
+            current+="${line}"$'\n'
+            if [[ "${line}" == ")" ]]; then
+                CONFIG_BLOCK_TEXT["${varname}"]="${current}"
+                CONFIG_BLOCK_END_LINE["${varname}"]="${line_no}"
+                CONFIG_BLOCK_NAMES+=("${varname}")
+                in_heredoc=false
+                current=""
+            fi
+            continue
+        fi
+        if [[ "${line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+            varname="${BASH_REMATCH[1]}"
+            current="${pending}${line}"$'\n'
+            pending=""
+            if [[ "${line}" == *"<<"*"'EOF'" ]]; then
+                in_heredoc=true
+            else
+                CONFIG_BLOCK_TEXT["${varname}"]="${current}"
+                CONFIG_BLOCK_END_LINE["${varname}"]="${line_no}"
+                CONFIG_BLOCK_NAMES+=("${varname}")
+                current=""
+            fi
+            continue
+        fi
+        pending+="${line}"$'\n'
+    done <<<"${content}"
+}
+
+# Add any variable in $2... that's missing entirely from CONF_FILE, using
+# the exact text (comments, blank line, assignment) from DEFAULT_CONFIG,
+# spliced in right after the nearest earlier variable (in DEFAULT_CONFIG's
+# order) that the user's file already has -- or at the very top if none
+# of the earlier ones exist either. Never touches a variable that's
+# already present, regardless of its value. Returns 1 (file untouched)
+# if there's nothing to add, or if one of the missing names isn't in
+# DEFAULT_CONFIG either (a caller should fall back to a hard error then).
+reconcile_missing_vars() {
+    local -a missing=("$@")
+    ((${#missing[@]} > 0)) || return 1
+
+    parse_config_blocks "${DEFAULT_CONFIG}"
+    local -a default_names=("${CONFIG_BLOCK_NAMES[@]}")
+    local -A default_text=()
+    local var
+    for var in "${default_names[@]}"; do
+        default_text["${var}"]="${CONFIG_BLOCK_TEXT[${var}]}"
+    done
+
+    for var in "${missing[@]}"; do
+        [[ -n "${default_text[${var}]+x}" ]] || return 1
+    done
+
+    local user_content
+    user_content="$(cat "${CONF_FILE}")" || return 1
+
+    parse_config_blocks "${user_content}"
+    local -A user_end_line=()
+    for var in "${CONFIG_BLOCK_NAMES[@]}"; do
+        user_end_line["${var}"]="${CONFIG_BLOCK_END_LINE[${var}]}"
+    done
+
+    local -A default_index=()
+    local i
+    for ((i = 0; i < ${#default_names[@]}; i++)); do
+        default_index["${default_names[i]}"]="${i}"
+    done
+
+    # Group each missing var's block text under the user-file line number
+    # of the nearest earlier variable (in canonical order) that the user
+    # already has; 0 means "insert at the very top of the file".
+    local -A insert_after=()
+    local -a added_report=()
+    for var in "${missing[@]}"; do
+        local idx="${default_index[${var}]}" anchor_line=0
+        for ((i = idx - 1; i >= 0; i--)); do
+            local candidate="${default_names[i]}"
+            if [[ -n "${user_end_line[${candidate}]+x}" ]]; then
+                anchor_line="${user_end_line[${candidate}]}"
+                break
+            fi
+        done
+        insert_after["${anchor_line}"]+="${default_text[${var}]}"
+        added_report+=("${default_text[${var}]}")
+    done
+
+    # Rebuild the file, splicing insert_after[N] right after user line N
+    # (insert_after[0] goes at the very top, before line 1).
+    local -a user_lines=()
+    mapfile -t user_lines <<<"${user_content}"
+    local new_content=""
+    [[ -n "${insert_after[0]+x}" ]] && new_content+="${insert_after[0]}"
+    local n
+    for ((n = 0; n < ${#user_lines[@]}; n++)); do
+        new_content+="${user_lines[n]}"$'\n'
+        local ln=$((n + 1))
+        [[ -n "${insert_after[${ln}]+x}" ]] && new_content+="${insert_after[${ln}]}"
+    done
+
+    printf '%s' "${new_content}" >"${CONF_FILE}"
+
+    info "Your config is missing settings added in a newer version. Updating ${CONF_FILE}:"
+    local block
+    for block in "${added_report[@]}"; do
+        # Process substitution instead of a here-string: <<< always adds
+        # its own trailing newline, which combined with block's own
+        # (every block ends in one) would otherwise read one spurious
+        # empty line at the end that was never actually part of it.
+        while IFS= read -r line; do
+            [[ -n "${line}" ]] || continue
+            echo "    + ${line}"
+        done < <(printf '%s' "${block}")
+    done
+    info "Config updated. Continuing..."
+    return 0
+}
+
 load_config() {
     [[ -f "${CONF_FILE}" ]] || die "Config not found: ${CONF_FILE}"
     # shellcheck disable=SC1090
     source "${CONF_FILE}"
 
     local required_vars=(START_DIR MAIN_PANE_WIDTH OVERFLOW_PANES INNER_SESSIONS BASE_CONF OUTER_CONF INNER_CONF SESSION_NAME_COMPONENT_MAX SESSION_NAME_TOTAL_MAX)
-    local var
+    local var missing_vars=()
     for var in "${required_vars[@]}"; do
-        [[ -n "${!var+x}" ]] || die "Config ${CONF_FILE} is missing required variable: ${var}"
+        [[ -n "${!var+x}" ]] || missing_vars+=("${var}")
     done
+
+    if ((${#missing_vars[@]} > 0)); then
+        if reconcile_missing_vars "${missing_vars[@]}"; then
+            # shellcheck disable=SC1090
+            source "${CONF_FILE}"
+        fi
+        missing_vars=()
+        for var in "${required_vars[@]}"; do
+            [[ -n "${!var+x}" ]] || missing_vars+=("${var}")
+        done
+        if ((${#missing_vars[@]} > 0)); then
+            die "Config ${CONF_FILE} is missing required variable(s): ${missing_vars[*]}"
+        fi
+    fi
 
     # See use_dir_as_name.md: a per-component-max-sized component, prefixed
     # by the leading "…/" used when other components get dropped, is the
@@ -737,6 +1016,70 @@ perform_update() {
     fi
 }
 
+# --- Config drift check (tmux config blocks) ---
+#
+# BASE_CONF/OUTER_CONF/INNER_CONF are explicitly meant to be freeform,
+# user-owned blocks (see the README: "just paste your settings between
+# the EOF markers"), so this only ever warns about lines present in the
+# bundled default that are missing from the user's own copy of the same
+# block -- it never modifies CONF_FILE. Runs once, from cmd_update, not
+# on every start.
+
+# Print the value variable $2 would have if config text $1 were sourced,
+# in an isolated subshell so nothing leaks into the caller's namespace.
+config_var_value() {
+    local config_text="$1" var="$2"
+    (
+        eval "${config_text}" &>/dev/null
+        printf '%s' "${!var}"
+    ) 2>/dev/null || true
+}
+
+# Report (never modify) lines present in $1's value of $3 that have no
+# exact match anywhere in $2's value of $3 -- comments and blank lines
+# included, not just tmux commands. $1/$2 are full config texts (the
+# freshly-updated bundled default, and the user's own file's content);
+# $3 is one of BASE_CONF/OUTER_CONF/INNER_CONF.
+report_block_drift() {
+    local default_config="$1" conf_file="$2" block="$3"
+    local default_value user_value
+    default_value="$(config_var_value "${default_config}" "${block}")"
+    user_value="$(config_var_value "$(cat "${conf_file}")" "${block}")"
+
+    local -a missing_lines=()
+    local line already ul
+    while IFS= read -r line; do
+        [[ -n "${line}" ]] || continue
+        already=false
+        while IFS= read -r ul; do
+            if [[ "${ul}" == "${line}" ]]; then
+                already=true
+                break
+            fi
+        done <<<"${user_value}"
+        [[ "${already}" == false ]] && missing_lines+=("${line}")
+    done <<<"${default_value}"
+
+    if ((${#missing_lines[@]} > 0)); then
+        warn "your ${conf_file}'s ${block} is missing lines present in the current bundled default:"
+        local l
+        for l in "${missing_lines[@]}"; do
+            echo "    ${l}" >&2
+        done
+    fi
+}
+
+# $1 is the freshly-updated bundled default config text (from the newly
+# installed multmux, not this currently-running one -- see cmd_update).
+check_tmux_config_drift() {
+    local default_config="$1"
+    [[ -f "${CONF_FILE}" ]] || return 0
+    local block
+    for block in BASE_CONF OUTER_CONF INNER_CONF; do
+        report_block_drift "${default_config}" "${CONF_FILE}" "${block}"
+    done
+}
+
 # Print a one-line notice about the last check, if there's anything to
 # report: either that an auto-update already happened, or that a newer
 # version is available. Safe to call even if no check has ever run yet.
@@ -847,11 +1190,31 @@ cmd_check_update() {
     fi
 }
 
+# Hidden: prints this exact version's canonical default config. Used by
+# cmd_update to fetch the freshly-installed version's DEFAULT_CONFIG for
+# the drift check below, since perform_update runs in a separate process
+# (install.sh) and replaces the file on disk without affecting the
+# currently-running (old) script's own already-loaded DEFAULT_CONFIG.
+cmd_default_config() {
+    printf '%s\n' "${DEFAULT_CONFIG}"
+}
+
 cmd_update() {
     if [[ $# -gt 0 ]]; then
         die "Unknown option: $1"
     fi
     perform_update
+
+    # Re-run whatever is now at SELF_PATH (not a hardcoded install
+    # location -- perform_update always overwrites that exact file, see
+    # resolve_self_path/the atomic-rename note in install.sh) to get the
+    # freshly-installed version's own DEFAULT_CONFIG. This process is
+    # still running the old code, so it can't see that directly itself.
+    local new_default_config
+    new_default_config="$("${SELF_PATH}" _default-config 2>/dev/null)" || true
+    if [[ -n "${new_default_config}" ]]; then
+        check_tmux_config_drift "${new_default_config}"
+    fi
 }
 
 cmd_help() {
@@ -914,6 +1277,7 @@ _auto-rename)
     shift
     cmd_auto_rename "$@"
     ;;
+_default-config) cmd_default_config ;;
 reset-layout)
     shift
     cmd_reset_layout "$@"
