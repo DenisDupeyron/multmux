@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.4"
+VERSION="0.5.5"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -422,6 +422,19 @@ unique_session_name() {
     printf '%s-%s\n' "${candidate}" "${n}"
 }
 
+# Create an inner session named uniquely relative to base name $1,
+# retrying once against a fresh session list if a concurrent multmux
+# invocation just claimed the first choice. Echoes the name used.
+create_unique_session() {
+    local base="$1" name
+    name="$(unique_session_name "${base}" "$(inner_session_list)")"
+    if ! ${TMI} new-session -s "${name}" -c "${START_DIR}" -d 2>/dev/null; then
+        name="$(unique_session_name "${base}" "$(inner_session_list)")"
+        ${TMI} new-session -s "${name}" -c "${START_DIR}" -d
+    fi
+    printf '%s\n' "${name}"
+}
+
 # Escape $1 for embedding inside a single-quoted shell argument (the
 # standard '\'' trick), so a literal quote in a session name can't break
 # out of the quoting in the send-keys command built by cmd_start.
@@ -623,10 +636,9 @@ cmd_add() {
 
     local base name
     base="$(session_name_for_path "${START_DIR}")"
-    name="$(unique_session_name "${base}" "$(inner_session_list)")"
+    name="$(create_unique_session "${base}")"
 
     info "Creating ${name}..."
-    ${TMI} new-session -s "${name}" -c "${START_DIR}" -d
     ${TMI} source-file "${CACHE_DIR}/inner.conf"
 
     ${TMI} switch-client -t "${name}"
@@ -659,8 +671,7 @@ cmd_remove() {
         # be a real tmux "duplicate session" collision, not just logical.
         local base name
         base="$(session_name_for_path "${START_DIR}")"
-        name="$(unique_session_name "${base}" "${sessions}")"
-        ${TMI} new-session -s "${name}" -c "${START_DIR}" -d
+        name="$(create_unique_session "${base}")"
         ${TMI} source-file "${CACHE_DIR}/inner.conf"
         ${TMI} switch-client -t "${name}"
         ${TMI} kill-session -t "${current}"

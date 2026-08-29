@@ -285,3 +285,30 @@ setup() {
     reconstructed="$(eval "printf '%s' '${escaped}'")"
     [ "${reconstructed}" = "${name}" ]
 }
+
+# --- create_unique_session ---
+
+@test "create_unique_session: retries once instead of aborting when the first new-session attempt loses a race" {
+    # Stub $TMI (normally "tmux -L socket") so the first invocation
+    # (the initial 'new-session' attempt) fails, simulating a concurrent
+    # multmux invocation having just claimed the name, and the second
+    # (the retry) succeeds.
+    local calls="${BATS_TEST_TMPDIR}/calls"
+    echo 0 >"${calls}"
+    local stub="${BATS_TEST_TMPDIR}/fake_tmi"
+    cat >"${stub}" << STUB
+#!/usr/bin/env bash
+n=\$(( \$(cat "${calls}") + 1 ))
+echo "\${n}" >"${calls}"
+[[ "\${n}" -eq 1 ]] && exit 1
+exit 0
+STUB
+    chmod +x "${stub}"
+    TMI="${stub}"
+    START_DIR="/tmp"
+    inner_session_list() { :; }
+    run create_unique_session "abc"
+    [ "${status}" -eq 0 ]
+    [ "${output}" = "abc" ]
+    [ "$(cat "${calls}")" -eq 2 ]
+}
