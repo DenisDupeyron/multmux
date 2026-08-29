@@ -120,7 +120,8 @@ Configuration lives at `~/.config/multmux.conf`, a sourced bash file created fro
 
 `multmux update` warns about settings present in the bundled default but missing from
 your file, without ever modifying it. A missing *required* variable is instead added to
-your file automatically, the next time you run any `multmux` command.
+your file automatically, the next time you run `start`, `add`, `remove`, or
+`reset-layout` (the commands that load configuration).
 
 ## Uninstall
 
