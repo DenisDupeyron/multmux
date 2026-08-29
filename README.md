@@ -49,8 +49,7 @@ multmux remove                # Remove the current inner session
 multmux rename <name>         # Rename the current inner session
 multmux list                  # List inner sessions
 multmux reset-layout          # Reset outer pane geometry to configured sizes
-multmux check-update          # Check now whether a newer version is available
-multmux update                # Update multmux to the latest version
+multmux update [--dry-run]    # Update multmux to the latest version
 multmux help                  # Show help
 ```
 
@@ -70,11 +69,13 @@ Asks for confirmation, then kills all inner sessions and the outer session.
 
 `detach` detaches your terminal from the outer session, from anywhere (a separate terminal, an overflow pane, or an inner session). It's a no-op if you're not attached.
 
-### `check-update` / `update`
+### `update`
 
-`start` always checks for a newer version in the background on its own, at most once every `AUTO_UPDATE_CHECK_INTERVAL_DAYS` (see below). If `AUTO_UPDATE` is true (the default), it installs the newer version right away, automatically; if false, it just leaves a one-line notice. `check-update` does the same check immediately instead of waiting for the next `start`, and reports (or installs, per `AUTO_UPDATE`) right away.
+`start` always checks for a newer version in the background on its own, at most once every `AUTO_UPDATE_CHECK_INTERVAL_DAYS` (see below). If `AUTO_UPDATE` is true (the default), it installs the newer version right away, automatically. If false, it just leaves a one-line notice.
 
-`update` unconditionally re-runs the install script to fetch the latest `multmux` script from GitHub, regardless of version. Your config at `~/.config/multmux.conf` is left untouched since the installer only writes it if it doesn't already exist.
+`update` unconditionally re-runs the install script to fetch the latest `multmux` script from GitHub, regardless of version, and then warns about any bundled tmux settings your own config is missing (see Configuration below). Your config at `~/.config/multmux.conf` is left untouched since the installer only writes it if it doesn't already exist.
+
+`update --dry-run` checks immediately, instead of waiting for the next `start`, and only ever reports what it finds. It never installs anything, regardless of `AUTO_UPDATE`.
 
 ### `add` / `remove`
 
@@ -100,7 +101,7 @@ Inner sessions are named after their current directory, and automatically rename
 - Any single path component longer than `SESSION_NAME_COMPONENT_MAX` (default 20) is truncated in its own middle, with an ellipsis (e.g. `a-really-long-directory-name` → `a-really-l…tory-name`).
 - If the whole name is still longer than `SESSION_NAME_TOTAL_MAX` (default 60) after that, whole components are dropped from the left and replaced with a single leading ellipsis (e.g. `~/work/clients/acme/backend/services/billing` → `…/backend/services/billing`).
 - If two sessions would end up with the same name, the newer one gets `-1`, `-2`, etc. appended (lowest available number, reused when a session is removed).
-- `:` and `.` are replaced (tmux reserves them for `session:window.pane` targets); this only applies to automatic renaming, since `rename` rejects them outright instead (see above).
+- `:` and `.` are replaced (tmux reserves them for `session:window.pane` targets). This only applies to automatic renaming, since `rename` rejects them outright instead (see above).
 
 Renaming a session manually with `multmux rename` makes it stop following its directory.
 
@@ -144,7 +145,7 @@ AUTO_UPDATE=true
 # Base tmux config applied to both outer and inner sessions. This is
 # loaded directly at server startup for each socket (see the -f flag in
 # 'multmux' itself), so your own ~/.config/tmux/tmux.conf or ~/.tmux.conf
-# is never read for multmux's sessions -- multmux is fully self-contained
+# is never read for multmux's sessions. multmux is fully self-contained
 # and your regular tmux usage is never affected by it.
 BASE_CONF=$(cat << 'EOF'
 # Use vi-style keys in copy mode

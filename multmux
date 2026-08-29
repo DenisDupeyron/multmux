@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.4.2"
+VERSION="0.4.3"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -73,7 +73,7 @@ AUTO_UPDATE=true
 # Base tmux config applied to both outer and inner sessions. This is
 # loaded directly at server startup for each socket (see the -f flag in
 # 'multmux' itself), so your own ~/.config/tmux/tmux.conf or ~/.tmux.conf
-# is never read for multmux's sessions -- multmux is fully self-contained
+# is never read for multmux's sessions. multmux is fully self-contained
 # and your regular tmux usage is never affected by it.
 BASE_CONF=$(cat << 'EOF'
 # Use vi-style keys in copy mode
@@ -176,7 +176,7 @@ SELF_PATH="$(resolve_self_path)"
 
 # Canonical (symlink-resolved) form of $HOME, used for the "~" substitution
 # in CWD-based session naming. tmux's pane_current_path is read from the OS
-# (e.g. via /proc/<pid>/cwd or libproc), which reports the resolved path --
+# (e.g. via /proc/<pid>/cwd or libproc), which reports the resolved path:
 # comparing that against a non-canonical $HOME (e.g. a symlinked home
 # directory) would silently miss the substitution otherwise.
 HOME_REAL="$(cd "${HOME}" 2>/dev/null && pwd -P || printf '%s' "${HOME}")"
@@ -188,7 +188,7 @@ die() {
     exit 1
 }
 # Both use `|| true` because a write can fail (e.g. EIO) if the
-# controlling terminal's pty has just been closed -- notably in `cmd_stop`,
+# controlling terminal's pty has just been closed, notably in `cmd_stop`,
 # where killing the inner server can invalidate the very pty this script is
 # writing to before it goes on to kill the outer server. Under `set -e`, an
 # unguarded failing echo would abort the script right there.
@@ -197,14 +197,14 @@ info() { echo "multmux: $*" || true; }
 
 # Parse a multmux.conf-formatted string (used for both DEFAULT_CONFIG and
 # the user's own file) into:
-#   CONFIG_BLOCK_NAMES    -- ordered array of top-level variable names
-#   CONFIG_BLOCK_TEXT     -- assoc array: name -> its comment/blank lines
-#                            immediately above it, plus its own assignment
-#                            (a single line, or a "VAR=$(cat << 'EOF' ...
-#                            EOF)" heredoc), verbatim
-#   CONFIG_BLOCK_END_LINE -- assoc array: name -> the 1-based line number,
-#                            within the given content, of the last line of
-#                            that variable's own assignment
+#   CONFIG_BLOCK_NAMES:    ordered array of top-level variable names
+#   CONFIG_BLOCK_TEXT:     assoc array: name -> its comment/blank lines
+#                          immediately above it, plus its own assignment
+#                          (a single line, or a "VAR=$(cat << 'EOF' ...
+#                          EOF)" heredoc), verbatim
+#   CONFIG_BLOCK_END_LINE: assoc array: name -> the 1-based line number,
+#                          within the given content, of the last line of
+#                          that variable's own assignment
 # Doesn't look inside heredoc bodies for anything other than finding the
 # closing ')' that ends one.
 parse_config_blocks() {
@@ -248,7 +248,7 @@ parse_config_blocks() {
 # Add any variable in $2... that's missing entirely from CONF_FILE, using
 # the exact text (comments, blank line, assignment) from DEFAULT_CONFIG,
 # spliced in right after the nearest earlier variable (in DEFAULT_CONFIG's
-# order) that the user's file already has -- or at the very top if none
+# order) that the user's file already has, or at the very top if none
 # of the earlier ones exist either. Never touches a variable that's
 # already present, regardless of its value. Returns 1 (file untouched)
 # if there's nothing to add, or if one of the missing names isn't in
@@ -286,7 +286,7 @@ reconcile_missing_vars() {
 
     # Group each missing var's block text under the user-file line number
     # of the nearest earlier variable (in canonical order) that the user
-    # already has; 0 means "insert at the very top of the file".
+    # already has (0 means "insert at the very top of the file").
     local -A insert_after=()
     local -a added_report=()
     for var in "${missing[@]}"; do
@@ -377,7 +377,7 @@ write_temp_configs() {
 
     # Drive CWD-based session renaming (see use_dir_as_name.md) off tmux's
     # own automatic-rename/window-renamed mechanism instead of any shell
-    # integration. automatic-rename itself is turned on by INNER_CONF; the
+    # integration. automatic-rename itself is turned on by INNER_CONF. The
     # hook needs SELF_PATH baked in at runtime, so it's appended here
     # rather than kept as a static line in INNER_CONF. #{session_id} is
     # single-quoted inside the escaped run-shell string so tmux's literal
@@ -495,7 +495,7 @@ render_path_parts() {
         else
             # A session named exactly "~" (nothing else) is unusable: tmux
             # treats the bare string "~" as target syntax for "the marked
-            # pane" (verified live -- 'attach -t ~' fails with "no marked
+            # pane" (verified live, 'attach -t ~' fails with "no marked
             # target"), not as a literal session name, even though tmux
             # happily creates a session with that name. "~/" isn't special
             # and reads just as clearly for the home directory itself.
@@ -576,7 +576,7 @@ name_in_use() {
 
 unique_session_name() {
     # Lowest available "-N" suffix, ignoring *why* a name is taken (real
-    # directory, earlier collision, or manual rename -- doesn't matter).
+    # directory, earlier collision, or manual rename, doesn't matter).
     # $3, if given, is the session's own current name: a session renaming
     # itself to the same name it already has must not count as a collision.
     local candidate="$1" used_list="$2" exclude="${3:-}"
@@ -630,7 +630,7 @@ cmd_start() {
 
     # -f loads outer.conf as this server boots, before its first pane is
     # created, instead of relying on tmux's normal automatic config-file
-    # lookup (~/.config/tmux/tmux.conf or ~/.tmux.conf) -- which is what
+    # lookup (~/.config/tmux/tmux.conf or ~/.tmux.conf), which is what
     # keeps multmux fully self-contained and never touches or is affected
     # by the user's own regular tmux config. It also matters for
     # default-terminal specifically: unlike other options, it only takes
@@ -643,7 +643,7 @@ cmd_start() {
     ${TMO} send-keys "unset TMUX" C-m
 
     # All INNER_SESSIONS sessions start out in the same START_DIR, so they
-    # collide on the same base name; assign them "-1", "-2", ... up front
+    # collide on the same base name: assign them "-1", "-2", ... up front
     # ourselves (see use_dir_as_name.md) instead of querying tmux, since
     # none of them exist yet when this is computed. batch_names[0] (no
     # suffix) is the one attached to below, replacing the old session-01.
@@ -783,7 +783,7 @@ cmd_stop() {
     # attached inner client), killing the inner server below closes this
     # very process's controlling pty. That makes the kernel deliver SIGHUP
     # to this script immediately, and bash's default reaction is to die on
-    # the spot -- before ever reaching the outer kill-server call below.
+    # the spot, before ever reaching the outer kill-server call below.
     # The same risk exists in the other direction if stop is run from a
     # plain shell pane inside the outer session. Ignoring SIGHUP here makes
     # the kill sequence immune to being interrupted by the very server
@@ -964,16 +964,16 @@ cmd_auto_rename() {
 # --- Auto-update check ---
 #
 # The check itself always runs from cmd_start (both the fast "already
-# running" path and a real start) once every AUTO_UPDATE_CHECK_INTERVAL_DAYS
-# -- it's not optional. AUTO_UPDATE only controls what happens once a newer
+# running" path and a real start) once every AUTO_UPDATE_CHECK_INTERVAL_DAYS.
+# This isn't optional. AUTO_UPDATE only controls what happens once a newer
 # version is actually found: install it automatically, or just leave a
 # notice for the user to run 'multmux update' themselves. Either way this
 # never blocks cmd_start and never fails loudly. See also the standalone
-# 'check-update' subcommand for an on-demand check.
+# 'update --dry-run' option for an on-demand check.
 
 # Is version $1 strictly greater than version $2? A boolean predicate:
 # like any bash predicate returning 1 for "false" (e.g. a bare [[ ]]),
-# it must only be called from if/while/&&/||/! -- calling it bare would
+# it must only be called from if/while/&&/||/!. Calling it bare would
 # abort the whole script under set -e whenever the answer is false.
 version_gt() {
     if [[ "$1" == "$2" ]]; then
@@ -988,7 +988,7 @@ version_gt() {
 # regex instead of piping through grep/cut: with a live network transfer,
 # a downstream stage (e.g. grep -m1) exiting as soon as it matches can
 # close the pipe while curl is still writing, killing it with SIGPIPE and
-# -- combined with pipefail -- aborting this whole check under set -e.
+# (combined with pipefail) aborting this whole check under set -e.
 fetch_latest_version() {
     local timeout="${1:-3}" content=""
     if command -v curl &>/dev/null; then
@@ -1004,7 +1004,7 @@ fetch_latest_version() {
 
 # Actually fetch and install the latest multmux (what 'multmux update'
 # does), shared with the auto-update path so both go through the same
-# code. Output is visible; the caller decides whether to silence it.
+# code. Output is visible. The caller decides whether to silence it.
 perform_update() {
     info "Fetching install script from ${REPO_URL}..."
     if command -v curl &>/dev/null; then
@@ -1022,7 +1022,7 @@ perform_update() {
 # user-owned blocks (see the README: "just paste your settings between
 # the EOF markers"), so this only ever warns about lines present in the
 # bundled default that are missing from the user's own copy of the same
-# block -- it never modifies CONF_FILE. Runs once, from cmd_update, not
+# block. It never modifies CONF_FILE. Runs once, from cmd_update, not
 # on every start.
 
 # Print the value variable $2 would have if config text $1 were sourced,
@@ -1036,9 +1036,9 @@ config_var_value() {
 }
 
 # Report (never modify) lines present in $1's value of $3 that have no
-# exact match anywhere in $2's value of $3 -- comments and blank lines
-# included, not just tmux commands. $1/$2 are full config texts (the
-# freshly-updated bundled default, and the user's own file's content);
+# exact match anywhere in $2's value of $3 (comments and blank lines
+# included, not just tmux commands). $1/$2 are full config texts (the
+# freshly-updated bundled default, and the user's own file's content).
 # $3 is one of BASE_CONF/OUTER_CONF/INNER_CONF.
 report_block_drift() {
     local default_config="$1" conf_file="$2" block="$3"
@@ -1070,7 +1070,7 @@ report_block_drift() {
 }
 
 # $1 is the freshly-updated bundled default config text (from the newly
-# installed multmux, not this currently-running one -- see cmd_update).
+# installed multmux, not this currently-running one, see cmd_update).
 check_tmux_config_drift() {
     local default_config="$1"
     [[ -f "${CONF_FILE}" ]] || return 0
@@ -1119,8 +1119,8 @@ read_update_settings() {
     return 0
 }
 
-# Show any pending notice immediately, then -- once every
-# AUTO_UPDATE_CHECK_INTERVAL_DAYS, unconditionally -- check in the
+# Show any pending notice immediately, then (once every
+# AUTO_UPDATE_CHECK_INTERVAL_DAYS, unconditionally) check in the
 # background for a newer version. If found, install it right away when
 # AUTO_UPDATE is true, otherwise just cache it for the next notice. Never
 # blocks and never fails loudly: no network, no GitHub, no problem.
@@ -1161,35 +1161,6 @@ check_for_update() {
     return 0
 }
 
-cmd_check_update() {
-    if [[ $# -gt 0 ]]; then
-        die "Unknown option: $1"
-    fi
-
-    read_update_settings
-    ensure_cache_dir
-    info "Checking for updates..."
-    local latest
-    latest="$(fetch_latest_version 5)"
-    [[ -n "${latest}" ]] || die "Could not check for updates (network unavailable?)."
-
-    date +%s >"${CACHE_DIR}/last_update_check"
-
-    if version_gt "${latest}" "${VERSION}"; then
-        rm -f "${CACHE_DIR}/latest_version"
-        if [[ "${AUTO_UPDATE}" == true ]]; then
-            info "A newer multmux is available: v${latest} (you have v${VERSION}). Updating..."
-            perform_update
-        else
-            echo "${latest}" >"${CACHE_DIR}/latest_version"
-            info "A newer multmux is available: v${latest} (you have v${VERSION}). Run 'multmux update' to install it."
-        fi
-    else
-        rm -f "${CACHE_DIR}/latest_version"
-        info "multmux is up to date (v${VERSION})."
-    fi
-}
-
 # Hidden: prints this exact version's canonical default config. Used by
 # cmd_update to fetch the freshly-installed version's DEFAULT_CONFIG for
 # the drift check below, since perform_update runs in a separate process
@@ -1199,14 +1170,51 @@ cmd_default_config() {
     printf '%s\n' "${DEFAULT_CONFIG}"
 }
 
-cmd_update() {
-    if [[ $# -gt 0 ]]; then
-        die "Unknown option: $1"
+# Fetch the latest version and report whether it's newer, caching the
+# result the same way the background check does so the next 'start'
+# picks it up too. Used by both --dry-run (report only) and a real
+# update (to decide what to tell the user, though it installs either way).
+report_latest_version() {
+    ensure_cache_dir
+    info "Checking for updates..."
+    local latest
+    latest="$(fetch_latest_version 5)"
+    [[ -n "${latest}" ]] || die "Could not check for updates (network unavailable?)."
+
+    date +%s >"${CACHE_DIR}/last_update_check"
+
+    if version_gt "${latest}" "${VERSION}"; then
+        echo "${latest}" >"${CACHE_DIR}/latest_version"
+        info "A newer multmux is available: v${latest} (you have v${VERSION}). Run 'multmux update' to install it."
+    else
+        rm -f "${CACHE_DIR}/latest_version"
+        info "multmux is up to date (v${VERSION})."
     fi
+}
+
+cmd_update() {
+    local dry_run=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        --dry-run)
+            dry_run=true
+            shift
+            ;;
+        *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    # A dry run only ever reports. It never installs, regardless of
+    # AUTO_UPDATE. That's the whole point of it.
+    if [[ "${dry_run}" == true ]]; then
+        report_latest_version
+        return 0
+    fi
+
     perform_update
 
     # Re-run whatever is now at SELF_PATH (not a hardcoded install
-    # location -- perform_update always overwrites that exact file, see
+    # location, perform_update always overwrites that exact file, see
     # resolve_self_path/the atomic-rename note in install.sh) to get the
     # freshly-installed version's own DEFAULT_CONFIG. This process is
     # still running the old code, so it can't see that directly itself.
@@ -1233,8 +1241,7 @@ Commands:
   rename <name>         Rename the current inner session
   list                  List inner sessions
   reset-layout          Reset outer pane geometry to configured sizes
-  check-update          Check now whether a newer version is available
-  update                Update multmux to the latest version
+  update [--dry-run]    Update multmux to the latest version
   help                  Show this help
 
 Configuration: ${CONF_FILE}
@@ -1281,10 +1288,6 @@ _default-config) cmd_default_config ;;
 reset-layout)
     shift
     cmd_reset_layout "$@"
-    ;;
-check-update)
-    shift
-    cmd_check_update "$@"
     ;;
 update)
     shift
