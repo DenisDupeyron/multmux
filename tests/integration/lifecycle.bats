@@ -26,6 +26,15 @@ teardown() {
     [[ "${output}" == *"~/ 1"* ]]
 }
 
+@test "start: attaches correctly even when START_DIR contains a single quote" {
+    dir="${HOME}/o'brien"
+    mkdir -p "${dir}"
+    printf '\nSTART_DIR="%s"\n' "${dir}" >>"${HOME}/.config/multmux.conf"
+    mm_start
+    run tmux -L "${MULTMUX_INNER_SOCKET}" list-sessions -F '#{session_attached}'
+    [[ "${output}" == *"1"* ]]
+}
+
 @test "start: numbers collide-by-default inner sessions -1 through -9" {
     mm_start
     for n in 1 2 3 4 5 6 7 8 9; do

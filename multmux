@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.2"
+VERSION="0.5.3"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -422,6 +422,13 @@ unique_session_name() {
     printf '%s-%s\n' "${candidate}" "${n}"
 }
 
+# Escape $1 for embedding inside a single-quoted shell argument (the
+# standard '\'' trick), so a literal quote in a session name can't break
+# out of the quoting in the send-keys command built by cmd_start.
+shell_single_quote_escape() {
+    printf '%s' "${1//\'/\'\\\'\'}"
+}
+
 # --- Subcommands ---
 
 cmd_start() {
@@ -490,8 +497,13 @@ cmd_start() {
     # Unset TMUX so the inner attach below isn't treated as nested.
     ${TMO} send-keys "unset TMUX" C-m
 
+    # Escaped for embedding in the single-quoted -t argument below: a
+    # literal quote in the name would otherwise break the quoting and
+    # leave the outer pane sitting at an unterminated shell command.
+    local attach_name
+    attach_name="$(shell_single_quote_escape "${batch_names[0]}")"
     info "Attaching to inner ${batch_names[0]}..."
-    ${TMO} send-keys "${TMI} attach -t '${batch_names[0]}'" C-m
+    ${TMO} send-keys "${TMI} attach -t '${attach_name}'" C-m
 
     for _ in $(seq 1 "${OVERFLOW_PANES}"); do
         ${TMO} split-window -c "${START_DIR}"

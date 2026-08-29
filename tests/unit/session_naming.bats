@@ -271,3 +271,17 @@ setup() {
     result="$(unique_session_name "abc" "$(printf 'abc\nother')" "abc")"
     [ "${result}" = "abc" ]
 }
+
+# --- shell_single_quote_escape ---
+
+@test "shell_single_quote_escape: leaves an ordinary name unchanged" {
+    result="$(shell_single_quote_escape "abc")"
+    [ "${result}" = "abc" ]
+}
+
+@test "shell_single_quote_escape: escapes an embedded single quote so it round-trips through eval" {
+    name="O'Brien"
+    escaped="$(shell_single_quote_escape "${name}")"
+    reconstructed="$(eval "printf '%s' '${escaped}'")"
+    [ "${reconstructed}" = "${name}" ]
+}
