@@ -2,14 +2,14 @@
 
 Two kinds of tests, using [bats-core](https://github.com/bats-core/bats-core):
 
-- **tests/unit/** — pure-logic tests. These `source` the `multmux` script
+- **tests/unit/**: pure-logic tests. These `source` the `multmux` script
   directly (no subprocess) and call its functions with fixture inputs: the
   CWD-based session-naming pipeline (truncation, collisions, `~`
   substitution), config parsing/loading/healing, the config-drift check,
   version comparison, and the update-fetch logic (with curl/wget stubbed
   out, no real network). Fast, no tmux required.
 
-- **tests/integration/** — real (but fully isolated) tmux. Every test gets
+- **tests/integration/**: real (but fully isolated) tmux. Every test gets
   its own throwaway `$HOME` and its own uniquely-named tmux `-L` sockets
   (via multmux's existing `MULTMUX_OUTER_SOCKET`/`MULTMUX_INNER_SOCKET`/
   `MULTMUX_REPO_URL` overrides), so nothing here ever touches a real
@@ -46,10 +46,10 @@ exercised:
   variables (auto-healed and reported), missing variables that aren't in
   the bundled default either (hard failure), and the
   `SESSION_NAME_TOTAL_MAX >= COMPONENT_MAX + 2` validation boundary.
-- **Config drift check**: real missing config lines are always caught;
+- **Config drift check**: real missing config lines are always caught,
   comment-only differences (any wording, indented or not) are never
-  reported, even alongside genuine unrelated drift; and — the strongest
-  regression test in the suite — `multmux update`'s drift check reflects
+  reported, even alongside genuine unrelated drift. And, the strongest
+  regression test in the suite, `multmux update`'s drift check reflects
   the *freshly-installed* binary's own logic and defaults, not whatever
   this process happened to have loaded before the update ran.
 - **Version/update fetching**: numeric (not lexicographic) version
@@ -62,9 +62,9 @@ exercised:
   case-insensitively), and every "not running yet" guard on
   attach/detach/add/remove/rename/list/reset-layout.
 - **add/remove/rename**: collision-suffix assignment on `add`, removing
-  down to (and safely replacing) the very last session — this caught a
+  down to (and safely replacing) the very last session (this caught a
   real bug where the replacement collided with the not-yet-killed
-  original — the previous/next-session selection on removing a
+  original), the previous/next-session selection on removing a
   non-last session, rejecting reserved characters (`:`/`.`) in
   `rename`, the sticky `@multmux_renamed` flag surviving a real `cd`,
   and refusing to rename onto an existing name.

@@ -1,9 +1,7 @@
 #!/usr/bin/env bats
-# Integration tests for the CWD-based auto-rename hook mechanism
-# (use_dir_as_name.md): cmd_auto_rename directly, the real tmux
-# window-renamed hook wiring end to end, the sticky-after-manual-rename
-# flag, and the status-interval fix that makes the renamed name show up
-# promptly in the status line.
+# Integration tests for the CWD-based auto-rename hook: cmd_auto_rename
+# directly, the real tmux window-renamed hook end to end, the
+# sticky-after-manual-rename flag, and prompt status-line updates.
 
 setup() {
     load '../helpers/common'

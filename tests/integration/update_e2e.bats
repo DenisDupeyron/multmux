@@ -113,7 +113,7 @@ teardown() {
 @test "update: the drift check reflects the freshly-installed script's content, not the pre-update one (regression)" {
     # This is the core regression for the "stale in-memory code" bug: the
     # PRE-update installed copy (MM_INSTALLED, i.e. this process's own
-    # code) still has the status-interval line; the fake repo's NEWER
+    # code) still has the status-interval line. The fake repo's NEWER
     # version being installed does NOT (simulated removal), and neither
     # does the user's config. If cmd_update ran the check with its own
     # stale in-memory logic/defaults instead of re-execing the freshly

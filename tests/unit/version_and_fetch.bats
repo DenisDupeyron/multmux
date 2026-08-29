@@ -102,7 +102,7 @@ STUB
 }
 
 @test "fetch_latest_version: never lets a downstream SIGPIPE-style failure escape as an error" {
-    # Simulates curl being killed mid-transfer; must still return 0 with
+    # Simulates curl being killed mid-transfer. Must still return 0 with
     # empty output rather than aborting under set -e/pipefail.
     mm_stub_tool curl 'echo "VERSION=\"1.0.0\""; kill -PIPE $$ 2>/dev/null; true'
     run fetch_latest_version 3

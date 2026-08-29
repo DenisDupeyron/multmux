@@ -1,9 +1,8 @@
 #!/usr/bin/env bats
-# Pure-logic unit tests for the CWD-based session naming pipeline
-# (use_dir_as_name.md): truncate_component, substitute_special_chars,
-# render_path_parts, format_session_name, canonical_path,
-# session_name_for_path, validate_session_name, name_in_use,
-# unique_session_name. No tmux, no network: pure string/array logic.
+# Pure-logic unit tests for the CWD-based session naming pipeline:
+# truncate_component, substitute_special_chars, render_path_parts,
+# format_session_name, canonical_path, session_name_for_path,
+# validate_session_name, name_in_use, unique_session_name.
 
 setup() {
     load '../helpers/common'
@@ -181,7 +180,7 @@ setup() {
 
 @test "session_name_for_path: end-to-end for a real subdirectory of home" {
     # session_name_for_path reads SESSION_NAME_COMPONENT_MAX/TOTAL_MAX as
-    # globals normally set by load_config; set them directly here since
+    # globals normally set by load_config. Set them directly here since
     # this test only cares about the naming pipeline, not config loading
     # (that has its own dedicated tests).
     SESSION_NAME_COMPONENT_MAX=20

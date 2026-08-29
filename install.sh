@@ -20,8 +20,7 @@ set -euo pipefail
 # multmux installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/DenisDupeyron/multmux/main/install.sh | bash
 
-# Overridable so tests can point this at a local fake server instead of
-# real GitHub (see tests/), same pattern used by multmux itself.
+# Overridable for tests (see tests/), same pattern used by multmux itself.
 REPO_URL="${MULTMUX_REPO_URL:-https://raw.githubusercontent.com/DenisDupeyron/multmux/main}"
 INSTALL_DIR="${HOME}/.local/bin"
 CONF_DIR="${HOME}/.config"
@@ -65,11 +64,9 @@ info "Dependencies OK (bash ${BASH_VERSION}, tmux ${tmux_version})"
 info "Installing multmux to ${INSTALL_DIR}/multmux..."
 mkdir -p "${INSTALL_DIR}"
 
-# Download to a temp file first, then move it into place atomically. This
-# matters because 'multmux update' may run this installer while the
-# currently-running multmux script is that very file: overwriting it in
-# place could corrupt the running process. mv (rename) does not touch the
-# original file's data, so a process already reading it is unaffected.
+# Download to a temp file, then move it into place atomically: 'multmux
+# update' may run this while that exact file is still running, and mv
+# (rename) doesn't touch the original file's data.
 tmp_multmux=$(mktemp)
 trap 'rm -f "${tmp_multmux}"' EXIT
 
@@ -87,23 +84,14 @@ trap - EXIT
 
 # --- Bundled defaults ---
 #
-# NOT the user's config (that is the separate, never-overwritten section
-# below). This is multmux's own internal reference copy of the shipped
-# defaults, installed right next to the script itself, exactly like the
-# multmux script file itself: nobody expects to hand-edit it or keep
-# changes across an update, so it's always safe to refresh in place.
-# multmux reads it at startup to reconcile/drift-check the user's config
-# against whatever this exact installed version actually ships, without
-# embedding a second, easily drifting copy inside the script itself, and
-# without needing a separate network fetch at reconciliation time: it's
-# already here from install.
+# Not the user's config (see below). This is multmux's own reference
+# copy of the shipped defaults, always safe to refresh in place. multmux
+# reads it at startup to reconcile/drift-check the user's config.
 
 info "Installing bundled defaults to ${INSTALL_DIR}/defaults/multmux.conf..."
 mkdir -p "${INSTALL_DIR}/defaults"
 
-# Same atomic download-then-rename as multmux itself above, for the same
-# reason: a concurrently running multmux could be reading this file while
-# this installer overwrites it.
+# Same atomic download-then-rename as above, for the same reason.
 tmp_defaults=$(mktemp)
 trap 'rm -f "${tmp_defaults}"' EXIT
 
@@ -120,8 +108,7 @@ trap - EXIT
 
 # --- User config ---
 #
-# Only ever created once: this is the user's own file to edit freely,
-# never touched again by multmux or by this installer on later updates.
+# Created once. The user's own file to edit freely, never touched again.
 
 if [[ ! -f "${CONF_DIR}/multmux.conf" ]]; then
     info "Installing default config to ${CONF_DIR}/multmux.conf..."

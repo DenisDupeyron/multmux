@@ -20,23 +20,18 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.4.8"
+VERSION="0.5.0"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
 INNER_SOCKET="${MULTMUX_INNER_SOCKET:-multmux-inner}"
 TMO="tmux -L ${OUTER_SOCKET}"
 TMI="tmux -L ${INNER_SOCKET}"
-# Overridable so tests can point this at a local fake server instead of
-# real GitHub (see tests/), same pattern as the socket overrides above.
+# Overridable for tests (see tests/), same pattern as the socket vars above.
 REPO_URL="${MULTMUX_REPO_URL:-https://raw.githubusercontent.com/DenisDupeyron/multmux/main}"
 
-# Absolute path to this script itself, needed to reference it from inside a
-# tmux hook (run-shell commands don't reliably inherit the invoking shell's
-# PATH), resolved once at startup regardless of how multmux was invoked
-# (bare name via PATH, relative path, or already absolute). Computed early
-# (before DEFAULT_CONFIG below) because DEFAULT_CONFIG is read from a file
-# next to this one, and needs SELF_PATH to find it.
+# Absolute path to this script (tmux run-shell hooks don't reliably
+# inherit PATH). Computed before DEFAULT_CONFIG, which is read relative to it.
 resolve_self_path() {
     local src="${BASH_SOURCE[0]}"
     if command -v realpath &>/dev/null; then
@@ -51,26 +46,14 @@ resolve_self_path() {
 }
 SELF_PATH="$(resolve_self_path)"
 
-# The canonical default config for this exact version, read from
-# defaults/multmux.conf right next to this script (installed alongside it,
-# unconditionally refreshed on every install/update, see install.sh) rather
-# than embedded as a second copy in here: a copy embedded in the script
-# would itself be a drift source between the two (it was, in fact, exactly
-# that: an earlier version of this script hardcoded a duplicate here that
-# drifted out of sync with defaults/multmux.conf more than once). Reading
-# it from disk still needs zero network calls at reconciliation time,
-# because it's already there from whenever this exact version was
-# installed, no separate/live fetch involved. Missing entirely (e.g. an
-# ancient install predating this layout) just means config
-# reconciliation/drift-checking silently can't do anything, not a hard
-# failure: neither is on multmux's normal startup/attach path.
+# Canonical default config, read from defaults/multmux.conf next to this
+# script rather than embedded here, to avoid a second copy drifting out
+# of sync (it has, historically). A missing file just disables drift
+# checking, not a hard failure.
 DEFAULT_CONFIG="$(cat "$(dirname "${SELF_PATH}")/defaults/multmux.conf" 2>/dev/null || true)"
 
-# Canonical (symlink-resolved) form of $HOME, used for the "~" substitution
-# in CWD-based session naming. tmux's pane_current_path is read from the OS
-# (e.g. via /proc/<pid>/cwd or libproc), which reports the resolved path:
-# comparing that against a non-canonical $HOME (e.g. a symlinked home
-# directory) would silently miss the substitution otherwise.
+# Symlink-resolved $HOME. tmux's pane_current_path is already resolved,
+# so comparing against a non-canonical $HOME would miss the "~" substitution.
 HOME_REAL="$(cd "${HOME}" 2>/dev/null && pwd -P || printf '%s' "${HOME}")"
 
 # --- Helpers ---
@@ -79,26 +62,17 @@ die() {
     echo "error: $*" >&2
     exit 1
 }
-# Both use `|| true` because a write can fail (e.g. EIO) if the
-# controlling terminal's pty has just been closed, notably in `cmd_stop`,
-# where killing the inner server can invalidate the very pty this script is
-# writing to before it goes on to kill the outer server. Under `set -e`, an
-# unguarded failing echo would abort the script right there.
+# `|| true`: pty can vanish mid-script (e.g. cmd_stop killing the inner
+# server). Under set -e an unguarded echo failure would abort here.
 warn() { echo "warning: $*" >&2 || true; }
 info() { echo "multmux: $*" || true; }
 
-# Parse a multmux.conf-formatted string (used for both DEFAULT_CONFIG and
-# the user's own file) into:
-#   CONFIG_BLOCK_NAMES:    ordered array of top-level variable names
-#   CONFIG_BLOCK_TEXT:     assoc array: name -> its comment/blank lines
-#                          immediately above it, plus its own assignment
-#                          (a single line, or a "VAR=$(cat << 'EOF' ...
-#                          EOF)" heredoc), verbatim
-#   CONFIG_BLOCK_END_LINE: assoc array: name -> the 1-based line number,
-#                          within the given content, of the last line of
-#                          that variable's own assignment
-# Doesn't look inside heredoc bodies for anything other than finding the
-# closing ')' that ends one.
+# Parse config text into:
+#   CONFIG_BLOCK_NAMES:    ordered top-level variable names
+#   CONFIG_BLOCK_TEXT:     name -> its leading comments/blanks + assignment
+#                          (single line or "VAR=$(cat << 'EOF' ... EOF)")
+#   CONFIG_BLOCK_END_LINE: name -> 1-based line number of its last line
+# Only looks inside a heredoc body for the closing ')'.
 parse_config_blocks() {
     local content="$1"
     CONFIG_BLOCK_NAMES=()
@@ -137,14 +111,10 @@ parse_config_blocks() {
     done <<<"${content}"
 }
 
-# Add any variable in $2... that's missing entirely from CONF_FILE, using
-# the exact text (comments, blank line, assignment) from DEFAULT_CONFIG,
-# spliced in right after the nearest earlier variable (in DEFAULT_CONFIG's
-# order) that the user's file already has, or at the very top if none
-# of the earlier ones exist either. Never touches a variable that's
-# already present, regardless of its value. Returns 1 (file untouched)
-# if there's nothing to add, or if one of the missing names isn't in
-# DEFAULT_CONFIG either (a caller should fall back to a hard error then).
+# Splice each variable named in $@ into CONF_FILE, verbatim from
+# DEFAULT_CONFIG, right after the nearest earlier variable the user's
+# file already has (or at the top). Never touches existing variables.
+# Returns 1 if nothing to add, or if a name isn't in DEFAULT_CONFIG.
 reconcile_missing_vars() {
     local -a missing=("$@")
     ((${#missing[@]} > 0)) || return 1
@@ -176,9 +146,7 @@ reconcile_missing_vars() {
         default_index["${default_names[i]}"]="${i}"
     done
 
-    # Group each missing var's block text under the user-file line number
-    # of the nearest earlier variable (in canonical order) that the user
-    # already has (0 means "insert at the very top of the file").
+    # Key: user-file line number to insert after (0 = top of file).
     local -A insert_after=()
     local -a added_report=()
     for var in "${missing[@]}"; do
@@ -194,8 +162,7 @@ reconcile_missing_vars() {
         added_report+=("${default_text[${var}]}")
     done
 
-    # Rebuild the file, splicing insert_after[N] right after user line N
-    # (insert_after[0] goes at the very top, before line 1).
+    # Rebuild the file, splicing insert_after[N] right after user line N.
     local -a user_lines=()
     mapfile -t user_lines <<<"${user_content}"
     local new_content=""
@@ -212,10 +179,8 @@ reconcile_missing_vars() {
     info "Your config is missing settings added in a newer version. Updating ${CONF_FILE}:"
     local block
     for block in "${added_report[@]}"; do
-        # Process substitution instead of a here-string: <<< always adds
-        # its own trailing newline, which combined with block's own
-        # (every block ends in one) would otherwise read one spurious
-        # empty line at the end that was never actually part of it.
+        # Process substitution, not <<<: a here-string's extra trailing
+        # newline would add a spurious empty line.
         while IFS= read -r line; do
             [[ -n "${line}" ]] || continue
             echo "    + ${line}"
@@ -250,9 +215,7 @@ load_config() {
         fi
     fi
 
-    # See use_dir_as_name.md: a per-component-max-sized component, prefixed
-    # by the leading "…/" used when other components get dropped, is the
-    # worst case the overall max has to accommodate.
+    # Worst case: one full-size component plus the leading "…/" marker.
     if ((SESSION_NAME_TOTAL_MAX < SESSION_NAME_COMPONENT_MAX + 2)); then
         die "SESSION_NAME_TOTAL_MAX (${SESSION_NAME_TOTAL_MAX}) must be at least SESSION_NAME_COMPONENT_MAX (${SESSION_NAME_COMPONENT_MAX}) + 2."
     fi
@@ -267,15 +230,10 @@ write_temp_configs() {
     printf '%s\n' "${BASE_CONF}" "${OUTER_CONF}" >"${CACHE_DIR}/outer.conf"
     printf '%s\n' "${BASE_CONF}" "${INNER_CONF}" >"${CACHE_DIR}/inner.conf"
 
-    # Drive CWD-based session renaming (see use_dir_as_name.md) off tmux's
-    # own automatic-rename/window-renamed mechanism instead of any shell
-    # integration. automatic-rename itself is turned on by INNER_CONF. The
-    # hook needs SELF_PATH baked in at runtime, so it's appended here
-    # rather than kept as a static line in INNER_CONF. #{session_id} is
-    # single-quoted inside the escaped run-shell string so tmux's literal
-    # "$N" substitution isn't re-expanded by the shell that executes it
-    # (verified live: without the single quotes, "$0" gets expanded to the
-    # invoking shell's own name instead of being passed through literally).
+    # Drives CWD-based renaming via tmux's window-renamed hook (automatic-
+    # rename is enabled in INNER_CONF). Appended here, not in INNER_CONF,
+    # because it needs SELF_PATH baked in. #{session_id} is single-quoted
+    # so tmux's own "$0" substitution isn't re-expanded by the shell.
     local dq='"'
     local bsdq='\"'
     local sq="'"
@@ -301,21 +259,15 @@ inner_session_list() {
 }
 
 current_inner_session() {
-    # The inner client in the main pane. Query list-clients explicitly instead of
-    # relying on display-message's implicit "current session" resolution: with no
-    # -t, tmux can fall back to a session that isn't actually attached to any
-    # client (e.g. one that was briefly attached from a different tty in the past),
-    # even while exactly one session has a real, live attached client. list-clients
-    # only ever reports genuinely attached clients, so it isn't subject to that
-    # fallback ambiguity.
+    # list-clients only reports genuinely attached clients. Unlike
+    # display-message's implicit "current session", it can't fall back
+    # to a stale, no-longer-attached session.
     ${TMI} list-clients -F '#{session_name}' 2>/dev/null | head -1
 }
 
 validate_session_name() {
-    # tmux uses ':' to separate session from window, and '.' to separate
-    # window from pane, in target specifiers (e.g. session:window.pane).
-    # A session name containing either breaks '-t <name>' addressing later,
-    # even though tmux happily creates/renames a session with such a name.
+    # ':' and '.' are tmux target-spec separators (session:window.pane).
+    # tmux allows them in a name but then can't address it via -t.
     local name="$1"
 
     if [[ -z "${name}" ]]; then
@@ -332,11 +284,10 @@ validate_session_name() {
     fi
 }
 
-# --- CWD-based session naming (see use_dir_as_name.md) ---
+# --- CWD-based session naming ---
 
 truncate_component() {
-    # Mid-string ellipsis truncation, ellipsis counted within max itself:
-    # a component longer than max is cut down to exactly max characters.
+    # Mid-string ellipsis. Result is exactly max characters (ellipsis included).
     local name="$1" max="$2"
     if ((${#name} <= max)); then
         printf '%s' "${name}"
@@ -353,10 +304,8 @@ truncate_component() {
 }
 
 substitute_special_chars() {
-    # ':' and '.' are reserved by tmux for session:window/window.pane target
-    # syntax (see validate_session_name). An automatic CWD-based rename
-    # can't reject-and-error like the interactive `rename` command does, so
-    # it substitutes them instead.
+    # Same reserved chars as validate_session_name, but auto-rename
+    # substitutes instead of rejecting.
     local s="$1"
     s="${s//:/_}"
     s="${s//./_}"
@@ -364,9 +313,7 @@ substitute_special_chars() {
 }
 
 render_path_parts() {
-    # Join path components back together, applying the leading marker for
-    # either the preserved "~"/"/" prefix (nothing dropped yet) or the
-    # single ellipsis used once components have been dropped from the left.
+    # Rejoin components, prefixed with "~"/"/" or "…/" once dropped.
     local dropped="$1" leading="$2"
     shift 2
     local joined
@@ -385,12 +332,8 @@ render_path_parts() {
             # shellcheck disable=SC2088  # literal '~' text, not a path to expand
             printf '~/%s' "${joined}"
         else
-            # A session named exactly "~" (nothing else) is unusable: tmux
-            # treats the bare string "~" as target syntax for "the marked
-            # pane" (verified live, 'attach -t ~' fails with "no marked
-            # target"), not as a literal session name, even though tmux
-            # happily creates a session with that name. "~/" isn't special
-            # and reads just as clearly for the home directory itself.
+            # Bare "~" is tmux target syntax for "the marked pane", not
+            # addressable as a session name. Use "~/" instead.
             # shellcheck disable=SC2088  # literal '~/' text, not a path to expand
             printf '~/'
         fi
@@ -402,9 +345,8 @@ render_path_parts() {
 }
 
 format_session_name() {
-    # The full pipeline: home-dir substitution, then per-component
-    # mid-ellipsis truncation, then whole-component dropping from the left
-    # (with a single leading ellipsis) if the result is still too long.
+    # Pipeline: "~" substitution, per-component truncation, then drop
+    # whole components from the left if still too long.
     local raw_path="$1" comp_max="$2" total_max="$3"
     local path="${raw_path}"
 
@@ -448,10 +390,9 @@ format_session_name() {
 }
 
 canonical_path() {
-    # Resolve symlinks the same way the OS resolves a process's cwd, so a
-    # path we compute a name for up front (e.g. START_DIR) matches what
-    # tmux's pane_current_path reports once a pane is actually running
-    # there. Falls back to the input unchanged if it doesn't exist (yet).
+    # Resolves symlinks like the OS resolves a cwd, so names computed
+    # up front match tmux's later pane_current_path. Falls back to the
+    # input if the path doesn't exist yet.
     local p="$1"
     (cd "${p}" 2>/dev/null && pwd -P) || printf '%s' "${p}"
 }
@@ -467,10 +408,8 @@ name_in_use() {
 }
 
 unique_session_name() {
-    # Lowest available "-N" suffix, ignoring *why* a name is taken (real
-    # directory, earlier collision, or manual rename, doesn't matter).
-    # $3, if given, is the session's own current name: a session renaming
-    # itself to the same name it already has must not count as a collision.
+    # Lowest available "-N" suffix. $3, if given, is the session's own
+    # current name, excluded so renaming to itself isn't a collision.
     local candidate="$1" used_list="$2" exclude="${3:-}"
     if ! name_in_use "${candidate}" "${used_list}" "${exclude}"; then
         printf '%s\n' "${candidate}"
@@ -507,7 +446,6 @@ cmd_start() {
         return 0
     fi
 
-    # Prevent starting from inside a tmux session
     if [[ -n "${TMUX:-}" ]]; then
         die "Cannot start from inside a tmux session. Run from a bare terminal."
     fi
@@ -520,22 +458,15 @@ cmd_start() {
     load_config
     write_temp_configs
 
-    # -f loads outer.conf as this server boots, before its first pane is
-    # created, instead of relying on tmux's normal automatic config-file
-    # lookup (~/.config/tmux/tmux.conf or ~/.tmux.conf), which is what
-    # keeps multmux fully self-contained and never touches or is affected
-    # by the user's own regular tmux config. It also matters for
-    # default-terminal specifically: unlike other options, it only takes
-    # effect for panes created after it's set, so it must be loaded before
-    # the very first new-session, not applied afterwards via source-file.
+    # -f loads outer.conf before the first pane exists, instead of tmux's
+    # normal config lookup, keeping multmux self-contained. Matters for
+    # default-terminal specifically, which only affects panes created
+    # after it's set.
     info "Starting outer session..."
     ${TMO} -f "${CACHE_DIR}/outer.conf" new-session -c "${START_DIR}" -d
 
-    # All INNER_SESSIONS sessions start out in the same START_DIR, so they
-    # collide on the same base name: assign them "-1", "-2", ... up front
-    # ourselves (see use_dir_as_name.md) instead of querying tmux, since
-    # none of them exist yet when this is computed. batch_names[0] (no
-    # suffix) is the one attached to below, replacing the old session-01.
+    # All start in START_DIR and collide on the base name, so suffixes
+    # are assigned up front. batch_names[0] is the one attached below.
     local base_name
     base_name="$(session_name_for_path "${START_DIR}")"
     local -a batch_names=("${base_name}")
@@ -544,22 +475,11 @@ cmd_start() {
         batch_names+=("${base_name}-${k}")
     done
 
-    # Start each inner session directly here in the script instead of by
-    # sending "new-session" as keystrokes into the outer pane. The outer
-    # pane's shell can still be starting up (sourcing profile scripts,
-    # etc.) right after new-session above returns, so send-keys into it
-    # races that startup: keystrokes sent before the shell is actually
-    # reading from its pty can be silently dropped, which is what caused
-    # fewer than INNER_SESSIONS inner sessions to show up sometimes.
-    # `tmux new-session -d` itself blocks until the session is actually
-    # created, so running it directly here has no such race and no
-    # longer needs the "small delay" that used to follow this loop.
-    # Same -f rationale as the outer session above. It's included on
-    # every call in this loop rather than just the very first one for
-    # simplicity: tmux only actually loads a -f file when it boots a
-    # socket's server, so it's a harmless no-op on every session after
-    # the first (verified: no error, no effect, on an already-running
-    # server).
+    # Created directly here, not via send-keys into the outer pane: the
+    # outer shell can still be starting up right after new-session
+    # returns, and keystrokes sent too early get silently dropped
+    # (used to cause fewer than INNER_SESSIONS sessions). -f is a
+    # harmless no-op after the first session on an already-running server.
     info "Starting ${INNER_SESSIONS} inner sessions..."
     local session idx
     for session in $(seq "${INNER_SESSIONS}" -1 1); do
@@ -567,26 +487,20 @@ cmd_start() {
         ${TMI} -f "${CACHE_DIR}/inner.conf" new-session -s "${batch_names[idx]}" -c "${START_DIR}" -d
     done
 
-    # Unset TMUX in the main pane so the inner attach below isn't treated
-    # as a nested session. By now the outer pane's shell has had the
-    # entire loop above to finish starting up, which also makes these two
-    # send-keys calls far less likely to race the shell than before.
+    # Unset TMUX so the inner attach below isn't treated as nested.
     ${TMO} send-keys "unset TMUX" C-m
 
     info "Attaching to inner ${batch_names[0]}..."
     ${TMO} send-keys "${TMI} attach -t '${batch_names[0]}'" C-m
 
-    # Create overflow panes on the right
     for _ in $(seq 1 "${OVERFLOW_PANES}"); do
         ${TMO} split-window -c "${START_DIR}"
     done
 
-    # Set layout
     ${TMO} set-window-option main-pane-width "${MAIN_PANE_WIDTH}"
     ${TMO} select-layout main-vertical
     ${TMO} set-hook -g window-resized 'select-layout main-vertical'
 
-    # Focus the main pane
     ${TMO} select-pane -t 0
 
     info "Ready."
@@ -638,14 +552,9 @@ cmd_detach() {
     local detached=false
     local clients
 
-    # Only detach clients on the outer socket. In normal use, the only
-    # inner-socket client is the nested "tmux attach" running inside the
-    # outer session's main pane (pane 0), and detaching it there would kill
-    # that nested process, leaving pane 0 on a bare shell instead of the
-    # inner session view on the next attach. Detaching the user's real
-    # terminal from the outer socket, from any pane or session, is enough
-    # to return them to a plain, non-multiplexed terminal.
-
+    # Only the outer socket is detached. The inner-socket client is the
+    # nested "tmux attach" in the outer session's main pane. Detaching it
+    # would kill that process instead of just the user's terminal.
     if outer_running; then
         clients=$(${TMO} list-clients -F '#{client_name}' 2>/dev/null || true)
         if [[ -n "${clients}" ]]; then
@@ -679,17 +588,9 @@ cmd_stop() {
         return 0
     fi
 
-    # Ignore SIGHUP for the rest of this command. If multmux stop is run
-    # from a shell prompt inside an inner session (the normal place to type
-    # commands, since the outer session's main pane just displays the
-    # attached inner client), killing the inner server below closes this
-    # very process's controlling pty. That makes the kernel deliver SIGHUP
-    # to this script immediately, and bash's default reaction is to die on
-    # the spot, before ever reaching the outer kill-server call below.
-    # The same risk exists in the other direction if stop is run from a
-    # plain shell pane inside the outer session. Ignoring SIGHUP here makes
-    # the kill sequence immune to being interrupted by the very server
-    # shutdown it triggers, regardless of which socket's pty it runs on.
+    # Ignore SIGHUP: killing either server below can close this very
+    # process's controlling pty, and bash's default reaction to SIGHUP
+    # would kill this script before the rest of the kill sequence runs.
     trap '' HUP
 
     info "Killing inner sessions..."
@@ -714,7 +615,6 @@ cmd_add() {
     ${TMI} new-session -s "${name}" -c "${START_DIR}" -d
     ${TMI} source-file "${CACHE_DIR}/inner.conf"
 
-    # Switch the inner client to the new session
     ${TMI} switch-client -t "${name}"
     info "Switched to ${name}."
 }
@@ -739,15 +639,10 @@ cmd_remove() {
     count=$(echo "${sessions}" | wc -l | tr -d ' ')
 
     if [[ "${count}" -le 1 ]]; then
-        # Last session. Kill it and create a fresh one
         info "Last session. Creating a replacement..."
-        # Deliberately no "exclude=current" here (unlike rename's use of
-        # unique_session_name): the replacement briefly coexists with the
-        # not-yet-killed current session (it has to, to switch the client
-        # away before killing it), so a same-named replacement would
-        # collide with tmux itself ("duplicate session"), not just
-        # logically. current's own name must count as taken until it's
-        # actually killed below.
+        # No exclude=current here: the replacement briefly coexists with
+        # the not-yet-killed current session, so reusing its name would
+        # be a real tmux "duplicate session" collision, not just logical.
         local base name
         base="$(session_name_for_path "${START_DIR}")"
         name="$(unique_session_name "${base}" "${sessions}")"
@@ -815,8 +710,7 @@ cmd_rename() {
     fi
 
     ${TMI} rename-session -t "${current}" "${new_name}"
-    # Mark it manually renamed so the CWD-based auto-rename hook leaves it
-    # alone from now on (see use_dir_as_name.md, rule 5).
+    # Marks it manually renamed so the CWD auto-rename hook skips it.
     ${TMI} set-option -t "${new_name}" @multmux_renamed 1
     info "Renamed ${current} to ${new_name}."
 }
@@ -839,8 +733,7 @@ cmd_list() {
     done <<<"$(inner_session_list)"
 }
 
-# Hidden/internal: invoked by the window-renamed tmux hook set up in
-# write_temp_configs, never by a user directly (see use_dir_as_name.md).
+# Internal: invoked only by the window-renamed hook (write_temp_configs).
 cmd_auto_rename() {
     local session_id="$1"
 
@@ -850,8 +743,7 @@ cmd_auto_rename() {
 
     load_config
 
-    # Sticky: a manually renamed session (multmux rename) stops tracking
-    # its CWD.
+    # A manually renamed session stops tracking its CWD.
     local sticky
     sticky=$(${TMI} show-options -v -t "${session_id}" '@multmux_renamed' 2>/dev/null || echo "")
     [[ "${sticky}" == "1" ]] && return 0
@@ -872,18 +764,12 @@ cmd_auto_rename() {
 
 # --- Auto-update check ---
 #
-# The check itself always runs from cmd_start (both the fast "already
-# running" path and a real start) once every AUTO_UPDATE_CHECK_INTERVAL_DAYS.
-# This isn't optional. AUTO_UPDATE only controls what happens once a newer
-# version is actually found: install it automatically, or just leave a
-# notice for the user to run 'multmux update' themselves. Either way this
-# never blocks cmd_start and never fails loudly. See also the standalone
-# 'update --dry-run' option for an on-demand check.
+# Runs unconditionally from cmd_start every AUTO_UPDATE_CHECK_INTERVAL_DAYS.
+# AUTO_UPDATE only controls what happens once a newer version is found:
+# install it, or just leave a notice. Never blocks, never fails loudly.
 
-# Is version $1 strictly greater than version $2? A boolean predicate:
-# like any bash predicate returning 1 for "false" (e.g. a bare [[ ]]),
-# it must only be called from if/while/&&/||/!. Calling it bare would
-# abort the whole script under set -e whenever the answer is false.
+# Is $1 strictly greater than $2? Boolean predicate, must be called from
+# if/while/&&/|| (a bare call aborts the script under set -e when false).
 version_gt() {
     if [[ "$1" == "$2" ]]; then
         return 1
@@ -891,13 +777,10 @@ version_gt() {
     [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" == "$1" ]]
 }
 
-# Print the latest VERSION from the repo's multmux script, or nothing on
-# any failure (offline, timeout, GitHub down, ...). $1 is the curl/wget
-# timeout in seconds. Fetches into a variable and matches with bash's own
-# regex instead of piping through grep/cut: with a live network transfer,
-# a downstream stage (e.g. grep -m1) exiting as soon as it matches can
-# close the pipe while curl is still writing, killing it with SIGPIPE and
-# (combined with pipefail) aborting this whole check under set -e.
+# Print the latest VERSION, or nothing on any failure. $1 is the
+# curl/wget timeout in seconds. Matches with bash regex, not grep/cut:
+# a downstream reader exiting early would SIGPIPE curl and, with
+# pipefail, abort the script.
 fetch_latest_version() {
     local timeout="${1:-3}" content=""
     if command -v curl &>/dev/null; then
@@ -911,9 +794,7 @@ fetch_latest_version() {
     return 0
 }
 
-# Actually fetch and install the latest multmux (what 'multmux update'
-# does), shared with the auto-update path so both go through the same
-# code. Output is visible. The caller decides whether to silence it.
+# Fetch and install the latest multmux, shared by 'update' and auto-update.
 perform_update() {
     info "Fetching install script from ${REPO_URL}..."
     if command -v curl &>/dev/null; then
@@ -927,15 +808,12 @@ perform_update() {
 
 # --- Config drift check (tmux config blocks) ---
 #
-# BASE_CONF/OUTER_CONF/INNER_CONF are explicitly meant to be freeform,
-# user-owned blocks (see the README: "just paste your settings between
-# the EOF markers"), so this only ever warns about lines present in the
-# bundled default that are missing from the user's own copy of the same
-# block. It never modifies CONF_FILE. Runs once, from cmd_update, not
-# on every start.
+# BASE_CONF/OUTER_CONF/INNER_CONF are freeform, user-owned blocks, so
+# this only warns about default lines missing from the user's copy.
+# Never modifies CONF_FILE. Runs from cmd_update, not on every start.
 
-# Print the value variable $2 would have if config text $1 were sourced,
-# in an isolated subshell so nothing leaks into the caller's namespace.
+# Print the value $2 would have if config text $1 were sourced, in an
+# isolated subshell.
 config_var_value() {
     local config_text="$1" var="$2"
     (
@@ -944,13 +822,9 @@ config_var_value() {
     ) 2>/dev/null || true
 }
 
-# Report (never modify) actual config lines present in $1's value of $3
-# that have no exact match anywhere in $2's value of $3. Blank lines and
-# comment-only lines are skipped entirely (on both sides): comments are
-# free-form prose that can be reworded across versions without changing
-# behavior, so diffing them would just be noise, not a real drift signal.
-# $1/$2 are full config texts (the freshly-updated bundled default, and
-# the user's own file's content). $3 is one of BASE_CONF/OUTER_CONF/INNER_CONF.
+# Warn about lines in $1's value of $3 missing from $2's value of $3.
+# Blank/comment-only lines are skipped: reworded prose isn't real drift.
+# $1/$2 are full config texts, $3 is BASE_CONF/OUTER_CONF/INNER_CONF.
 report_block_drift() {
     local default_config="$1" conf_file="$2" block="$3"
     local default_value user_value
@@ -981,8 +855,7 @@ report_block_drift() {
     fi
 }
 
-# $1 is the freshly-updated bundled default config text (from the newly
-# installed multmux, not this currently-running one, see cmd_update).
+# $1 is the freshly-installed bundled default, not this running version's.
 check_tmux_config_drift() {
     local default_config="$1"
     [[ -f "${CONF_FILE}" ]] || return 0
@@ -992,9 +865,8 @@ check_tmux_config_drift() {
     done
 }
 
-# Print a one-line notice about the last check, if there's anything to
-# report: either that an auto-update already happened, or that a newer
-# version is available. Safe to call even if no check has ever run yet.
+# Print a one-line notice if a check found something to report.
+# Safe to call even if no check has ever run.
 show_update_notice_if_cached() {
     if [[ -f "${CACHE_DIR}/just_auto_updated" ]]; then
         rm -f "${CACHE_DIR}/just_auto_updated"
@@ -1011,10 +883,8 @@ show_update_notice_if_cached() {
     return 0
 }
 
-# Read AUTO_UPDATE and AUTO_UPDATE_CHECK_INTERVAL_DAYS from CONF_FILE on
-# their own, independently of load_config, so a broken config can never
-# break starting/attaching. Falls back to defaults if CONF_FILE is
-# missing, broken, or doesn't set them.
+# Read AUTO_UPDATE* independently of load_config, so a broken config
+# can't break starting/attaching. Falls back to defaults otherwise.
 read_update_settings() {
     AUTO_UPDATE=true
     AUTO_UPDATE_CHECK_INTERVAL_DAYS=7
@@ -1031,11 +901,8 @@ read_update_settings() {
     return 0
 }
 
-# Show any pending notice immediately, then (once every
-# AUTO_UPDATE_CHECK_INTERVAL_DAYS, unconditionally) check in the
-# background for a newer version. If found, install it right away when
-# AUTO_UPDATE is true, otherwise just cache it for the next notice. Never
-# blocks and never fails loudly: no network, no GitHub, no problem.
+# Show any pending notice, then check in the background at most once
+# every AUTO_UPDATE_CHECK_INTERVAL_DAYS. Never blocks, never fails loudly.
 check_for_update() {
     local auto_update interval_days
     read_update_settings
@@ -1053,8 +920,7 @@ check_for_update() {
     interval_secs=$((interval_days * 86400))
     ((now - last_check < interval_secs)) && return 0
 
-    # Record the attempt immediately so rapid repeated invocations don't
-    # all spawn their own background check at once.
+    # Recorded up front so rapid repeated invocations don't all check at once.
     echo "${now}" >"${CACHE_DIR}/last_update_check"
 
     (
@@ -1073,24 +939,16 @@ check_for_update() {
     return 0
 }
 
-# Hidden: runs the config drift check using THIS exact version's own
-# DEFAULT_CONFIG and its own report_block_drift logic. cmd_update always
-# re-execs SELF_PATH into this rather than calling check_tmux_config_drift
-# directly in-process, because perform_update runs in a separate process
-# (install.sh) that replaces the file on disk without affecting anything
-# the currently-running (old) script already has loaded, and that's not
-# just the DEFAULT_CONFIG text: the comparison logic itself (e.g. which
-# lines count as real drift vs. just reworded comments) can change
-# between versions too, so it has to come from the freshly-installed
-# code, not from whatever this process happened to start with.
+# Internal: runs drift check with THIS version's own DEFAULT_CONFIG and
+# logic. cmd_update re-execs SELF_PATH into this instead of calling it
+# in-process, because both the default text and the comparison logic
+# itself must come from the freshly-installed code, not the old process.
 cmd_check_config_drift() {
     check_tmux_config_drift "${DEFAULT_CONFIG}"
 }
 
-# Fetch the latest version and report whether it's newer, caching the
-# result the same way the background check does so the next 'start'
-# picks it up too. Used by both --dry-run (report only) and a real
-# update (to decide what to tell the user, though it installs either way).
+# Fetch the latest version, report whether it's newer, and cache the
+# result like the background check does. Used by --dry-run and update.
 report_latest_version() {
     ensure_cache_dir
     info "Checking for updates..."
@@ -1121,8 +979,7 @@ cmd_update() {
         esac
     done
 
-    # A dry run only ever reports. It never installs, regardless of
-    # AUTO_UPDATE. That's the whole point of it.
+    # A dry run only reports. It never installs.
     if [[ "${dry_run}" == true ]]; then
         report_latest_version
         return 0
@@ -1130,11 +987,8 @@ cmd_update() {
 
     perform_update
 
-    # Re-exec whatever is now at SELF_PATH (not a hardcoded install
-    # location, perform_update always overwrites that exact file, see
-    # resolve_self_path/the atomic-rename note in install.sh) to run the
-    # freshly-installed version's own drift check end to end. This
-    # process is still running the old code, so it can't do that itself.
+    # Re-exec the freshly-installed SELF_PATH to run its own drift check.
+    # This process is still running the old code.
     "${SELF_PATH}" _check-config-drift || true
 }
 
@@ -1163,10 +1017,8 @@ EOF
 
 # --- Main dispatch ---
 
-# Guarded so tests can `source` this file to get at its functions/vars
-# without also running the CLI dispatch below (which `${0}` vs
-# `${BASH_SOURCE[0]}` distinguishes: they're equal only when the script
-# is executed directly, not sourced).
+# Guarded so tests can `source` this file without running the CLI below.
+# ${0} == ${BASH_SOURCE[0]} only when executed directly, not sourced.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     case "${1:-help}" in
     start)

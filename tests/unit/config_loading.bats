@@ -2,7 +2,7 @@
 # Unit tests for config parsing/loading/healing: parse_config_blocks,
 # reconcile_missing_vars, load_config. Uses a real (but throwaway)
 # $HOME/.config/multmux.conf on disk since these functions read/write
-# CONF_FILE directly; no tmux or network involved.
+# CONF_FILE directly. No tmux or network involved.
 
 setup() {
     load '../helpers/common'
