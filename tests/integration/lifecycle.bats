@@ -12,6 +12,13 @@ teardown() {
     mm_kill_fake_sockets
 }
 
+@test "CLI: dies clearly if tmux is not installed" {
+    mm_hermetic_path_without tmux
+    run "${MULTMUX_SCRIPT}" help
+    [ "${status}" -ne 0 ]
+    [[ "${output}" == *"tmux is not installed"* ]]
+}
+
 @test "start: creates the outer session and the configured number of inner sessions" {
     mm_start
     run tmux -L "${MULTMUX_OUTER_SOCKET}" list-sessions

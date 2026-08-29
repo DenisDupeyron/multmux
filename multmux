@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.3"
+VERSION="0.5.4"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -1034,6 +1034,7 @@ EOF
 # Guarded so tests can `source` this file without running the CLI below.
 # ${0} == ${BASH_SOURCE[0]} only when executed directly, not sourced.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    command -v tmux &>/dev/null || die "tmux is not installed."
     case "${1:-help}" in
     start)
         shift
