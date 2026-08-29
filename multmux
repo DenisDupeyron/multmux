@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.4.0"
+VERSION="0.4.1"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -349,11 +349,16 @@ cmd_start() {
     load_config
     write_temp_configs
 
+    # -f loads outer.conf as this server boots, before its first pane is
+    # created, instead of relying on tmux's normal automatic config-file
+    # lookup (~/.config/tmux/tmux.conf or ~/.tmux.conf) -- which is what
+    # keeps multmux fully self-contained and never touches or is affected
+    # by the user's own regular tmux config. It also matters for
+    # default-terminal specifically: unlike other options, it only takes
+    # effect for panes created after it's set, so it must be loaded before
+    # the very first new-session, not applied afterwards via source-file.
     info "Starting outer session..."
-    ${TMO} new-session -c "${START_DIR}" -d
-
-    info "Loading outer config..."
-    ${TMO} source-file "${CACHE_DIR}/outer.conf"
+    ${TMO} -f "${CACHE_DIR}/outer.conf" new-session -c "${START_DIR}" -d
 
     # Unset TMUX in the main pane so inner sessions can start
     ${TMO} send-keys "unset TMUX" C-m
@@ -371,18 +376,21 @@ cmd_start() {
         batch_names+=("${base_name}-${k}")
     done
 
+    # Same -f rationale as the outer session above. It's included on
+    # every call in this loop rather than just the very first one for
+    # simplicity: tmux only actually loads a -f file when it boots a
+    # socket's server, so it's a harmless no-op on every session after
+    # the first (verified: no error, no effect, on an already-running
+    # server).
     info "Starting ${INNER_SESSIONS} inner sessions..."
     local session idx
     for session in $(seq "${INNER_SESSIONS}" -1 1); do
         idx=$((session - 1))
-        ${TMO} send-keys "${TMI} new-session -s '${batch_names[idx]}' -c '${START_DIR}' -d" C-m
+        ${TMO} send-keys "${TMI} -f '${CACHE_DIR}/inner.conf' new-session -s '${batch_names[idx]}' -c '${START_DIR}' -d" C-m
     done
 
     # Small delay for sessions to initialize
     sleep 1
-
-    info "Loading inner config..."
-    ${TMO} send-keys "${TMI} source-file '${CACHE_DIR}/inner.conf'" C-m
 
     info "Attaching to inner ${batch_names[0]}..."
     ${TMO} send-keys "${TMI} attach -t '${batch_names[0]}'" C-m

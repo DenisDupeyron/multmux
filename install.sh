@@ -23,7 +23,6 @@ set -euo pipefail
 REPO_URL="https://raw.githubusercontent.com/DenisDupeyron/multmux/main"
 INSTALL_DIR="${HOME}/.local/bin"
 CONF_DIR="${HOME}/.config"
-TMUX_CONF_DIR="${HOME}/.config/tmux"
 
 info() { echo "[multmux] $*"; }
 die() { echo "[multmux] ERROR: $*" >&2; exit 1; }
@@ -92,20 +91,6 @@ if [[ ! -f "${CONF_DIR}/multmux.conf" ]]; then
     fi
 else
     info "Config already exists at ${CONF_DIR}/multmux.conf, skipping."
-fi
-
-# --- Optional: tmux.conf ---
-
-if [[ ! -f "${TMUX_CONF_DIR}/tmux.conf" && ! -f "${HOME}/.tmux.conf" ]]; then
-    info "No tmux config found. Installing recommended tmux.conf to ${TMUX_CONF_DIR}/tmux.conf..."
-    mkdir -p "${TMUX_CONF_DIR}"
-    if command -v curl &>/dev/null; then
-        curl -fsSL "${REPO_URL}/defaults/tmux.conf" -o "${TMUX_CONF_DIR}/tmux.conf"
-    else
-        wget -q "${REPO_URL}/defaults/tmux.conf" -O "${TMUX_CONF_DIR}/tmux.conf"
-    fi
-else
-    info "tmux config already exists, skipping."
 fi
 
 # --- Version ---

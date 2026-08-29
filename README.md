@@ -6,12 +6,9 @@
 
 A wrapper that will make you feel like a `tmux` wizard with only two shortcuts.
 
-With the provided default `tmux` config, click on a line separator to resize panes, click in a pane to select/activate it. Then:
+With the bundled `tmux` config, click on a line separator to resize panes, click in a pane to select/activate it. Then:
 - `ctrl+b z` to zoom in and out of a pane
 - `ctrl+a s` then up and down arrow and hit `return` on the session you want to select for the main pane (you may need to click on the main pane to activate it first)
-
-> [!CAUTION]
-> If the mouse or shortcuts above don't work, it's most likely because you have a broken `tmux.conf`. You can fix it, but we recommend you use [the bundled one](https://github.com/DenisDupeyron/multmux/blob/main/defaults/tmux.conf) (it's only installed automatically if there is no pre-existing one).
 
 ## One-liner install
 
@@ -77,7 +74,7 @@ Asks for confirmation, then kills all inner sessions and the outer session.
 
 `start` always checks for a newer version in the background on its own, at most once every `AUTO_UPDATE_CHECK_INTERVAL_DAYS` (see below). If `AUTO_UPDATE` is true (the default), it installs the newer version right away, automatically; if false, it just leaves a one-line notice. `check-update` does the same check immediately instead of waiting for the next `start`, and reports (or installs, per `AUTO_UPDATE`) right away.
 
-`update` unconditionally re-runs the install script to fetch the latest `multmux` script from GitHub, regardless of version. Your config at `~/.config/multmux.conf` and `tmux.conf` are left untouched since the installer only writes them if they do not already exist.
+`update` unconditionally re-runs the install script to fetch the latest `multmux` script from GitHub, regardless of version. Your config at `~/.config/multmux.conf` is left untouched since the installer only writes it if it doesn't already exist.
 
 ### `add` / `remove`
 
@@ -125,7 +122,7 @@ OVERFLOW_PANES=3
 INNER_SESSIONS=10
 
 # Inner sessions are automatically named/renamed from their current
-# directory (see Session naming above). Any single path component longer
+# directory (see use_dir_as_name.md). Any single path component longer
 # than this is truncated in its own middle, with an ellipsis.
 SESSION_NAME_COMPONENT_MAX=20
 
@@ -144,8 +141,68 @@ AUTO_UPDATE_CHECK_INTERVAL_DAYS=7
 # 'multmux update'.
 AUTO_UPDATE=true
 
-# Base tmux config applied to both outer and inner sessions
+# Base tmux config applied to both outer and inner sessions. This is
+# loaded directly at server startup for each socket (see the -f flag in
+# 'multmux' itself), so your own ~/.config/tmux/tmux.conf or ~/.tmux.conf
+# is never read for multmux's sessions -- multmux is fully self-contained
+# and your regular tmux usage is never affected by it.
 BASE_CONF=$(cat << 'EOF'
+# Use vi-style keys in copy mode
+setw -g mode-keys vi
+
+# Advertise 256-color support to apps running inside tmux
+set default-terminal "screen-256color"
+# Unlike for other terminals, tmux doesn't auto-detect true color support in Alacritty
+set -as terminal-overrides ",alacritty*:Tc"
+
+# Let Ctrl-a also act as the prefix (keeps prefix usable across nested
+# outer/inner multmux sessions without needing to press it twice)
+bind-key -n C-a send-prefix
+# Prefix + Ctrl-s toggles synchronized input to all panes in the window
+bind C-s set-window-option synchronize-panes
+# Prefix + arrow keys selects the pane in that direction (explicit default)
+bind-key    Up    select-pane -U
+bind-key    Down  select-pane -D
+bind-key    Left  select-pane -L
+bind-key    Right select-pane -R
+
+# Prefix + s opens an interactive session picker, most recent activity first
+bind s choose-tree -Zs -O activity
+
+# Recognize Escape quickly so it isn't confused with escape sequences
+# (needed by modal editors, e.g. Neovim/lazy.vim)
+set-option -sg escape-time 10
+# Report terminal focus in/out events to apps that use them (e.g. editor autoread)
+set-option -g focus-events on
+
+# Report modified keys (Ctrl/Shift/Alt combos) to apps that request them
+# (used by many modern TUIs, e.g. opencode)
+set-option -g extended-keys on
+# Use the clearer CSI u wire format for those keys, understood by most
+# modern terminal apps and TUI libraries (e.g. opencode, prime-agent)
+set-option -g extended-keys-format csi-u
+
+# Enable mouse support: click to select/resize panes, wheel to scroll, etc.
+set -g mouse on
+# Scroll wheel: scroll pane history, or forward to the app if it wants mouse input
+bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'copy-mode -e; send-keys -M'"
+
+# Pick the clipboard command for this platform: pbcopy on macOS, else
+# wl-copy under Wayland, else xclip under X11
+if-shell "command -v pbcopy" \
+    "set -g @yank 'pbcopy'" \
+    "if-shell \"command -v wl-copy\" \"set -g @yank 'wl-copy'\" \"set -g @yank 'xclip -selection clipboard -in'\""
+
+# Fix select to copy due to above
+# Mouse drag-select copies the selection to the system clipboard
+bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "#{@yank}"
+# Double-click selects a word and copies it to the system clipboard
+bind -T copy-mode-vi DoubleClick1Pane select-pane \; send-keys -X select-word \; send-keys -X copy-pipe-and-cancel "#{@yank}"
+# Triple-click selects a line and copies it to the system clipboard
+bind -T copy-mode-vi TripleClick1Pane select-pane \; send-keys -X select-line \; send-keys -X copy-pipe-and-cancel "#{@yank}"
+
+# Keep more scrollback (helps when using multmux's overflow/monitoring panes)
+set -g history-limit 10000
 EOF
 )
 
@@ -176,7 +233,6 @@ The `tmux` config blocks use standard `tmux` syntax, just paste your settings be
 ```bash
 rm ~/.local/bin/multmux
 rm ~/.config/multmux.conf        # if you want to remove the config too
-rm ~/.config/tmux/tmux.conf      # if multmux installed it and you want to remove it too
 rm -rf ~/.cache/multmux
 ```
 
