@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.0"
+VERSION="0.5.1"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -582,7 +582,9 @@ cmd_stop() {
         return 0
     fi
 
-    read -r -p "Kill all multmux sessions? [y/N] " confirm
+    # || confirm="": non-interactive stdin (EOF) makes 'read' fail; under
+    # set -e that would otherwise abort the whole script with no message.
+    read -r -p "Kill all multmux sessions? [y/N] " confirm || confirm=""
     if [[ "${confirm}" != [yY] ]]; then
         info "Aborted."
         return 0

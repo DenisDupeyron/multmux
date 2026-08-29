@@ -98,6 +98,15 @@ teardown() {
     [ "${status}" -eq 0 ]
 }
 
+@test "stop: closed stdin (EOF) aborts cleanly instead of crashing silently" {
+    mm_start
+    run bash -c "'${MULTMUX_SCRIPT}' stop < /dev/null"
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"Aborted"* ]]
+    run tmux -L "${MULTMUX_OUTER_SOCKET}" list-sessions
+    [ "${status}" -eq 0 ]
+}
+
 @test "stop: confirming with 'y' kills both outer and inner servers" {
     mm_start
     run bash -c "printf 'y\n' | '${MULTMUX_SCRIPT}' stop"
