@@ -60,8 +60,9 @@ exercised:
 - **Lifecycle**: idempotent `start`, refusing to start from inside a
   nested tmux session, cleaning up orphaned inner sessions from a crashed
   previous run, the `stop` confirmation prompt (accepting/declining,
-  case-insensitively), and every "not running yet" guard on
-  attach/detach/add/remove/rename/status/reset-layout.
+  case-insensitively), `uninstall` removing every installed file while
+  preserving or deleting the configuration as requested, and every "not
+  running yet" guard on attach/detach/add/remove/rename/status/reset-layout.
 - **add/remove/rename**: collision-suffix assignment on `add`, removing
   down to (and safely replacing) the very last session (this caught a
   real bug where the replacement collided with the not-yet-killed

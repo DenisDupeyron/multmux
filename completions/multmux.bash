@@ -20,6 +20,9 @@ _multmux() {
     update)
         [[ "${prev}" == "update" ]] && mapfile -t COMPREPLY < <(compgen -W "--dry-run" -- "${cur}")
         ;;
+    uninstall)
+        [[ "${prev}" == "uninstall" ]] && mapfile -t COMPREPLY < <(compgen -W "--config" -- "${cur}")
+        ;;
     add)
         [[ "${prev}" == "add" ]] && mapfile -t COMPREPLY < <(compgen -d -- "${cur}")
         ;;

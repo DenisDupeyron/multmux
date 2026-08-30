@@ -20,9 +20,12 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.6.6"
+VERSION="0.6.7"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
+INSTALL_DIR="${HOME}/.local/bin"
+DEFAULTS_DIR="${INSTALL_DIR}/defaults"
+REINSTALL_COMMAND="curl -fsSL https://raw.githubusercontent.com/DenisDupeyron/multmux/main/install.sh | bash"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
 INNER_SOCKET="${MULTMUX_INNER_SOCKET:-multmux-inner}"
 TMO="tmux -L ${OUTER_SOCKET}"
@@ -1002,7 +1005,7 @@ cmd_check_config_drift() {
 # 'multmux _commands' to get this list, so they can't drift out of sync
 # with the dispatch case below.
 cmd_commands() {
-    printf '%s\n' start stop attach detach add remove rename status reset-layout update help version
+    printf '%s\n' start stop attach detach add remove rename status reset-layout update uninstall help version
 }
 
 # Fetch the latest version, report whether it's newer, and cache the
@@ -1050,6 +1053,36 @@ cmd_update() {
     "${SELF_PATH}" _check-config-drift || true
 }
 
+cmd_uninstall() {
+    local remove_config=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        --config)
+            remove_config=true
+            shift
+            ;;
+        *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    local prompt="Uninstall multmux files"
+    [[ "${remove_config}" == true ]] && prompt+=" and configuration"
+    read -r -p "${prompt}? [y/N] " confirm || confirm=""
+    if [[ "${confirm}" != [yY] ]]; then
+        info "Aborted."
+        return 0
+    fi
+
+    rm -f "${INSTALL_DIR}/multmux" \
+        "${HOME}/.local/share/bash-completion/completions/multmux" \
+        "${HOME}/.local/share/zsh/site-functions/_multmux"
+    rm -rf "${DEFAULTS_DIR}" "${CACHE_DIR}"
+    [[ "${remove_config}" == true ]] && rm -f "${CONF_FILE}"
+
+    info "Uninstalled. Reinstall with:"
+    echo "${REINSTALL_COMMAND}"
+}
+
 cmd_help() {
     cat <<EOF
 multmux ${VERSION} - tmux session multiplexer
@@ -1067,6 +1100,7 @@ Commands:
   status                Show outer/inner running state and inner sessions
   reset-layout          Reset outer pane geometry to configured sizes
   update [--dry-run]    Update multmux to the latest version
+  uninstall [--config]   Remove multmux files (asks for confirmation)
   help                  Show this help
 
 Configuration: ${CONF_FILE}
@@ -1078,7 +1112,7 @@ EOF
 # Guarded so tests can `source` this file without running the CLI below.
 # ${0} == ${BASH_SOURCE[0]} only when executed directly, not sourced.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    command -v tmux &>/dev/null || die "tmux is not installed."
+    [[ "${1:-help}" == uninstall ]] || command -v tmux &>/dev/null || die "tmux is not installed."
     case "${1:-help}" in
     start)
         shift
@@ -1125,6 +1159,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     update)
         shift
         cmd_update "$@"
+        ;;
+    uninstall)
+        shift
+        cmd_uninstall "$@"
         ;;
     help | --help | -h) cmd_help ;;
     version | --version | -v) echo "multmux ${VERSION}" ;;

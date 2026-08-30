@@ -63,6 +63,7 @@ multmux rename <name>         # Rename the current inner session
 multmux status                # Show outer/inner running state and inner sessions
 multmux reset-layout          # Reset outer pane geometry to configured sizes
 multmux update [--dry-run]    # Update multmux to the latest version
+multmux uninstall [--config]  # Remove multmux files (asks for confirmation)
 multmux help                  # Show help
 ```
 
@@ -81,6 +82,10 @@ Asks for confirmation, then kills all inner sessions and the outer session.
 `attach` attaches to the outer session, from anywhere. It's a no-op if you're already attached.
 
 `detach` detaches your terminal from the outer session, from anywhere (a separate terminal, an overflow pane, or an inner session). It's a no-op if you're not attached.
+
+### `uninstall`
+
+`uninstall` asks for confirmation and removes the multmux executable, bundled defaults, cache, and shell completions. Pass `--config` to also remove `~/.config/multmux.conf`. After removal, it prints the one-line install command.
 
 ### `update`
 
@@ -145,12 +150,13 @@ your file automatically, the next time you run `start`, `add`, `remove`, or
 ## Uninstall
 
 ```bash
-rm ~/.local/bin/multmux
-rm -rf ~/.local/bin/defaults
-rm ~/.config/multmux.conf        # if you want to remove the config too
-rm -rf ~/.cache/multmux
-rm ~/.local/share/bash-completion/completions/multmux
-rm ~/.local/share/zsh/site-functions/_multmux
+multmux uninstall
+```
+
+Pass `--config` to remove `~/.config/multmux.conf` too:
+
+```bash
+multmux uninstall --config
 ```
 
 ## Architecture

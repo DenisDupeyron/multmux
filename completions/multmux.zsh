@@ -23,12 +23,15 @@ _multmux() {
         _describe -t commands 'multmux command' commands
         ;;
     args)
-        case "${words[1]}" in
+        case "${words[2]}" in
         start)
             _values 'option' --no-attach
             ;;
         update)
             _values 'option' --dry-run
+            ;;
+        uninstall)
+            _values 'option' --config
             ;;
         add)
             _files -/

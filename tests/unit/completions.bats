@@ -14,7 +14,7 @@ setup() {
 @test "cmd_commands: lists every public subcommand" {
     run cmd_commands
     [ "${status}" -eq 0 ]
-    for cmd in start stop attach detach add remove rename status reset-layout update help version; do
+    for cmd in start stop attach detach add remove rename status reset-layout update uninstall help version; do
         [[ "${output}" == *"${cmd}"* ]]
     done
 }
@@ -74,6 +74,19 @@ setup() {
     [[ "${output}" == *"--no-attach"* ]]
 }
 
+@test "completions/multmux.bash: completes --config after 'uninstall'" {
+    run bash -c "
+        PATH=${MULTMUX_REPO_ROOT}:\${PATH}
+        source '${MULTMUX_REPO_ROOT}/completions/multmux.bash'
+        COMP_WORDS=(multmux uninstall '')
+        COMP_CWORD=2
+        _multmux
+        printf '%s\n' \"\${COMPREPLY[@]}\"
+    "
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"--config"* ]]
+}
+
 @test "completions/multmux.bash: completes directories after 'add'" {
     mm_make_dir "${BATS_TEST_TMPDIR}/completion-target" >/dev/null
     run bash -c "
@@ -87,6 +100,20 @@ setup() {
     "
     [ "${status}" -eq 0 ]
     [[ "${output}" == *"completion-target"* ]]
+}
+
+@test "completions/multmux.zsh: completes --config after 'uninstall'" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run zsh -c "
+        PATH=${MULTMUX_REPO_ROOT}:\${PATH}
+        source '${MULTMUX_REPO_ROOT}/completions/multmux.zsh'
+        words=(multmux uninstall '')
+        _arguments() { state=args; }
+        _values() { print -r -- \"\$2\"; }
+        _multmux
+    "
+    [ "${status}" -eq 0 ]
+    [ "${output}" = "--config" ]
 }
 
 @test "completions/multmux.zsh: loads and defines _multmux without error" {
