@@ -191,13 +191,23 @@ if [[ "${SHELL:-}" == */bash ]] && command -v bash &>/dev/null; then
 fi
 
 if [[ "${SHELL:-}" == */zsh ]] && command -v zsh &>/dev/null; then
-    if ! zsh -i -c 'print -l $fpath' </dev/null 2>/dev/null | grep -qFx -- "${HOME}/.local/share/zsh/site-functions"; then
+    # Checks the real outcome (does zsh actually wire 'multmux' to a
+    # completion function after running the user's own ~/.zshrc, whatever
+    # it does), not just whether the directory is on $fpath: a stale
+    # cached compinit dump (common with Oh My Zsh/Prezto/'speed up zsh
+    # startup' setups that skip rescanning fpath) leaves completion
+    # broken even once fpath is correctly set.
+    if [[ "$(zsh -i -c 'print -r -- ${_comps[multmux]:-}' </dev/null 2>/dev/null)" != "_multmux" ]]; then
         echo ""
-        info "WARNING: ~/.local/share/zsh/site-functions is not on your zsh \$fpath."
-        info "multmux tab-completion won't work until you add this to your ~/.zshrc"
-        info "(before compinit):"
+        info "WARNING: zsh doesn't have tab-completion wired up for multmux yet."
+        info "Make sure this runs before any 'compinit' call in your ~/.zshrc:"
         echo ""
         echo "  fpath=(~/.local/share/zsh/site-functions \$fpath)"
+        echo ""
+        info "Already there and still not working? zsh cached an older completion"
+        info "list. Force a rebuild:"
+        echo ""
+        echo "  rm -f ~/.zcompdump* && exec zsh"
         echo ""
     fi
 fi

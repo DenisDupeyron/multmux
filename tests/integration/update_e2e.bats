@@ -167,22 +167,38 @@ teardown() {
     [[ "${output}" != *"bash-completion"* ]]
 }
 
-@test "update: warns when the zsh site-functions dir isn't on \$fpath" {
+@test "update: warns when zsh has no completion setup at all" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     export SHELL=/bin/zsh
     rm -f "${HOME}/.zshrc"
     run "${MM_INSTALLED}" update
     [ "${status}" -eq 0 ]
-    [[ "${output}" == *"is not on your zsh"* ]]
+    [[ "${output}" == *"doesn't have tab-completion wired up"* ]]
 }
 
-@test "update: stops warning about zsh \$fpath once the user's .zshrc adds the site-functions dir" {
+@test "update: still warns if \$fpath is set but compinit is never called (regression: fpath alone isn't enough)" {
+    # A fpath-membership-only check would have wrongly suppressed this
+    # warning: the directory is on fpath, but nothing ever wires
+    # 'multmux' to a completion function without a real compinit call.
     command -v zsh &>/dev/null || skip "zsh not installed"
     export SHELL=/bin/zsh
     printf 'fpath=("%s/.local/share/zsh/site-functions" $fpath)\n' "${HOME}" > "${HOME}/.zshrc"
     run "${MM_INSTALLED}" update
     [ "${status}" -eq 0 ]
-    [[ "${output}" != *"is not on your zsh"* ]]
+    [[ "${output}" == *"doesn't have tab-completion wired up"* ]]
+}
+
+@test "update: stops warning once the user's .zshrc sets fpath and runs compinit" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    export SHELL=/bin/zsh
+    {
+        printf 'fpath=("%s/.local/share/zsh/site-functions" $fpath)\n' "${HOME}"
+        printf 'autoload -Uz compinit\n'
+        printf 'compinit -u\n'
+    } > "${HOME}/.zshrc"
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [[ "${output}" != *"doesn't have tab-completion wired up"* ]]
 }
 
 @test "update: never warns about zsh \$fpath when the user's shell isn't zsh (regression)" {
