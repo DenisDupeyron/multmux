@@ -305,9 +305,8 @@ exit 0
 STUB
     chmod +x "${stub}"
     TMI="${stub}"
-    START_DIR="/tmp"
     inner_session_list() { :; }
-    run create_unique_session "abc"
+    run create_unique_session "abc" "/tmp"
     [ "${status}" -eq 0 ]
     [ "${output}" = "abc" ]
     [ "$(cat "${calls}")" -eq 2 ]
@@ -319,9 +318,8 @@ STUB
     printf '#!/usr/bin/env bash\nexit 1\n' >"${stub}"
     chmod +x "${stub}"
     TMI="${stub}"
-    START_DIR="/tmp"
     inner_session_list() { :; }
-    run create_unique_session "abc"
+    run create_unique_session "abc" "/tmp"
     [ "${status}" -ne 0 ]
     [[ "${output}" == *"error:"* ]]
 }

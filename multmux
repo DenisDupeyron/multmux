@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.11"
+VERSION="0.5.12"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -422,17 +422,18 @@ unique_session_name() {
 }
 
 # Create an inner session named uniquely relative to base name $1,
-# retrying once against a fresh session list if a concurrent multmux
-# invocation just claimed the first choice. Echoes the name used.
+# starting in directory $2. Retries once against a fresh session list
+# if a concurrent multmux invocation just claimed the first choice.
+# Echoes the name used.
 create_unique_session() {
-    local base="$1" name
+    local base="$1" dir="$2" name
     name="$(unique_session_name "${base}" "$(inner_session_list)")"
-    if ! ${TMI} new-session -s "${name}" -c "${START_DIR}" -d 2>/dev/null; then
+    if ! ${TMI} new-session -s "${name}" -c "${dir}" -d 2>/dev/null; then
         name="$(unique_session_name "${base}" "$(inner_session_list)")"
         # set -e doesn't propagate into this function's $(...) caller
         # (command substitution subshells don't inherit errexit), so a
         # second failure must be handled explicitly, not left to abort.
-        ${TMI} new-session -s "${name}" -c "${START_DIR}" -d || die "Could not create inner session '${name}'."
+        ${TMI} new-session -s "${name}" -c "${dir}" -d || die "Could not create inner session '${name}'."
     fi
     printf '%s\n' "${name}"
 }
@@ -630,15 +631,24 @@ cmd_stop() {
 }
 
 cmd_add() {
+    if [[ $# -gt 1 ]]; then
+        die "Usage: multmux add [path]"
+    fi
+
     if ! inner_running; then
         die "multmux is not running. Use 'multmux start' first."
     fi
 
     load_config
 
+    local target_dir="${1:-${START_DIR}}"
+    if [[ $# -eq 1 ]]; then
+        [[ -d "${target_dir}" ]] || die "Directory not found: ${target_dir}"
+    fi
+
     local base name
-    base="$(session_name_for_path "${START_DIR}")"
-    name="$(create_unique_session "${base}")"
+    base="$(session_name_for_path "${target_dir}")"
+    name="$(create_unique_session "${base}" "${target_dir}")"
 
     info "Creating ${name}..."
     ${TMI} source-file "${CACHE_DIR}/inner.conf"
@@ -677,7 +687,7 @@ cmd_remove() {
         # be a real tmux "duplicate session" collision, not just logical.
         local base name
         base="$(session_name_for_path "${START_DIR}")"
-        name="$(create_unique_session "${base}")"
+        name="$(create_unique_session "${base}" "${START_DIR}")"
         ${TMI} source-file "${CACHE_DIR}/inner.conf"
         ${TMI} switch-client -t "${name}"
         ${TMI} kill-session -t "${current}"
@@ -1034,7 +1044,7 @@ Commands:
   stop                  Stop multmux sessions (asks for confirmation)
   attach                Attach to the outer session (idempotent)
   detach                Detach from multmux, from anywhere (idempotent)
-  add                   Add a new inner session and switch to it
+  add [path]            Add a new inner session (default: START_DIR) and switch to it
   remove                Remove the current inner session
   rename <name>         Rename the current inner session
   list                  List inner sessions

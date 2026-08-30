@@ -44,7 +44,7 @@ multmux start [--no-attach]   # Start multmux (idempotent)
 multmux stop                  # Stop all sessions (asks for confirmation)
 multmux attach                # Attach to the outer session (idempotent)
 multmux detach                # Detach from multmux, from anywhere (idempotent)
-multmux add                   # Add a new inner session and switch to it
+multmux add [path]            # Add a new inner session (default: START_DIR) and switch to it
 multmux remove                # Remove the current inner session
 multmux rename <name>         # Rename the current inner session
 multmux list                  # List inner sessions
@@ -79,7 +79,7 @@ Asks for confirmation, then kills all inner sessions and the outer session.
 
 ### `add` / `remove`
 
-`add` creates a new inner session and switches to it immediately.
+`add` creates a new inner session, in `path` if given or `START_DIR` otherwise, and switches to it immediately.
 
 `remove` kills the current inner session and switches to the previous one. If it's the last session, a fresh replacement is created automatically (the main pane is never left empty).
 

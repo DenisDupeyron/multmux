@@ -35,6 +35,40 @@ teardown() {
     [ "${status}" -eq 0 ]
 }
 
+@test "add: with an explicit path argument creates a session rooted and named there" {
+    mm_start
+    dir="$(mm_make_dir "${HOME}/myproject")"
+    run "${MULTMUX_SCRIPT}" add "${dir}"
+    [ "${status}" -eq 0 ]
+    run tmux -L "${MULTMUX_INNER_SOCKET}" has-session -t "~/myproject"
+    [ "${status}" -eq 0 ]
+    run tmux -L "${MULTMUX_INNER_SOCKET}" display-message -p -t "~/myproject" '#{pane_current_path}'
+    [ "${output}" = "${dir}" ]
+}
+
+@test "add: a bare '.' resolves to the invoking shell's current directory" {
+    mm_start
+    dir="$(mm_make_dir "${HOME}/dotproject")"
+    run bash -c "cd '${dir}' && '${MULTMUX_SCRIPT}' add ."
+    [ "${status}" -eq 0 ]
+    run tmux -L "${MULTMUX_INNER_SOCKET}" has-session -t "~/dotproject"
+    [ "${status}" -eq 0 ]
+}
+
+@test "add: dies clearly when the given path does not exist" {
+    mm_start
+    run "${MULTMUX_SCRIPT}" add "${HOME}/no/such/dir"
+    [ "${status}" -ne 0 ]
+    [[ "${output}" == *"Directory not found"* ]]
+}
+
+@test "add: rejects more than one argument" {
+    mm_start
+    run "${MULTMUX_SCRIPT}" add foo bar
+    [ "${status}" -ne 0 ]
+    [[ "${output}" == *"Usage"* ]]
+}
+
 @test "remove: fails clearly when multmux is not running" {
     run "${MULTMUX_SCRIPT}" remove
     [ "${status}" -ne 0 ]
