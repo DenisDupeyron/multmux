@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.8"
+VERSION="0.5.9"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -251,10 +251,6 @@ outer_running() {
 
 inner_running() {
     ${TMI} list-sessions &>/dev/null 2>&1
-}
-
-inner_session_count() {
-    ${TMI} list-sessions 2>/dev/null | wc -l | tr -d ' '
 }
 
 inner_session_list() {
