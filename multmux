@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.6.10"
+VERSION="0.6.11"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 INSTALL_DIR="${HOME}/.local/bin"
@@ -75,6 +75,10 @@ load_config() {
     done
     if ((${#missing_vars[@]} > 0)); then
         die "Config ${CONF_FILE} is missing required variable(s): ${missing_vars[*]}. Run 'multmux update' to add settings from the current defaults."
+    fi
+
+    if [[ ! "${INNER_SESSIONS}" =~ ^[1-9][0-9]?$ ]]; then
+        die "INNER_SESSIONS must be an integer from 1 to 99."
     fi
 
     # Worst case: one full-size component plus the leading "…/" marker.

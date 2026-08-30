@@ -60,6 +60,19 @@ teardown() {
     [ "${before}" = "${after}" ]
 }
 
+@test "start: rejects an invalid inner session count before creating servers" {
+    printf '\nINNER_SESSIONS=0\n' >>"${HOME}/.config/multmux.conf"
+
+    run "${MULTMUX_SCRIPT}" start --no-attach
+
+    [ "${status}" -ne 0 ]
+    [[ "${output}" == *"INNER_SESSIONS must be an integer from 1 to 99"* ]]
+    run tmux -L "${MULTMUX_OUTER_SOCKET}" list-sessions
+    [ "${status}" -ne 0 ]
+    run tmux -L "${MULTMUX_INNER_SOCKET}" list-sessions
+    [ "${status}" -ne 0 ]
+}
+
 @test "start: refuses to run from inside a tmux session (nested)" {
     export TMUX="fake:pretend-nested"
     run "${MULTMUX_SCRIPT}" start --no-attach
