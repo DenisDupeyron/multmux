@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.10"
+VERSION="0.5.11"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -668,7 +668,7 @@ cmd_remove() {
     local sessions
     sessions=$(inner_session_list)
     local count
-    count=$(echo "${sessions}" | wc -l | tr -d ' ')
+    count=$(wc -l <<<"${sessions}" | tr -d ' ')
 
     if [[ "${count}" -le 1 ]]; then
         info "Last session. Creating a replacement..."
