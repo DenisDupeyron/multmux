@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.13"
+VERSION="0.6.0"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -997,6 +997,14 @@ cmd_check_config_drift() {
     check_tmux_config_drift "${DEFAULT_CONFIG}"
 }
 
+# Internal: the public command names, one per line. Both completion
+# scripts (completions/multmux.bash, completions/multmux.zsh) call
+# 'multmux _commands' to get this list, so they can't drift out of sync
+# with the dispatch case below.
+cmd_commands() {
+    printf '%s\n' start stop attach detach add remove rename status reset-layout update help version
+}
+
 # Fetch the latest version, report whether it's newer, and cache the
 # result like the background check does. Used by --dry-run and update.
 report_latest_version() {
@@ -1109,6 +1117,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         cmd_auto_rename "$@"
         ;;
     _check-config-drift) cmd_check_config_drift ;;
+    _commands) cmd_commands ;;
     reset-layout)
         shift
         cmd_reset_layout "$@"

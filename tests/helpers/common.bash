@@ -161,10 +161,12 @@ mm_start() {
 # mm_stop_fake_repo_server. Sets MM_FAKE_REPO_DIR and MM_FAKE_REPO_PID.
 mm_start_fake_repo_server() {
     MM_FAKE_REPO_DIR="$(mktemp -d "${BATS_TEST_TMPDIR:-${TMPDIR:-/tmp}}/mm-repo.XXXXXX")"
-    mkdir -p "${MM_FAKE_REPO_DIR}/defaults"
+    mkdir -p "${MM_FAKE_REPO_DIR}/defaults" "${MM_FAKE_REPO_DIR}/completions"
     cp "${MULTMUX_REPO_ROOT}/multmux" "${MM_FAKE_REPO_DIR}/multmux"
     cp "${MULTMUX_REPO_ROOT}/install.sh" "${MM_FAKE_REPO_DIR}/install.sh"
     cp "${MULTMUX_REPO_ROOT}/defaults/multmux.conf" "${MM_FAKE_REPO_DIR}/defaults/multmux.conf"
+    cp "${MULTMUX_REPO_ROOT}/completions/multmux.bash" "${MM_FAKE_REPO_DIR}/completions/multmux.bash"
+    cp "${MULTMUX_REPO_ROOT}/completions/multmux.zsh" "${MM_FAKE_REPO_DIR}/completions/multmux.zsh"
     chmod +x "${MM_FAKE_REPO_DIR}/multmux" "${MM_FAKE_REPO_DIR}/install.sh"
 
     local port=0 attempt

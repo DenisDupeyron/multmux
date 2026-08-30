@@ -106,6 +106,39 @@ fi
 mv "${tmp_defaults}" "${INSTALL_DIR}/defaults/multmux.conf"
 trap - EXIT
 
+# --- Shell completions ---
+#
+# Not user config either. Regenerated in place on every install/update,
+# same atomic download-then-rename pattern as multmux itself.
+
+info "Installing shell completions..."
+mkdir -p "${HOME}/.local/share/bash-completion/completions"
+mkdir -p "${HOME}/.local/share/zsh/site-functions"
+
+tmp_bash_completion=$(mktemp)
+trap 'rm -f "${tmp_bash_completion}"' EXIT
+if command -v curl &>/dev/null; then
+    curl -fsSL "${REPO_URL}/completions/multmux.bash" -o "${tmp_bash_completion}"
+elif command -v wget &>/dev/null; then
+    wget -q "${REPO_URL}/completions/multmux.bash" -O "${tmp_bash_completion}"
+else
+    die "Neither curl nor wget found."
+fi
+mv "${tmp_bash_completion}" "${HOME}/.local/share/bash-completion/completions/multmux"
+trap - EXIT
+
+tmp_zsh_completion=$(mktemp)
+trap 'rm -f "${tmp_zsh_completion}"' EXIT
+if command -v curl &>/dev/null; then
+    curl -fsSL "${REPO_URL}/completions/multmux.zsh" -o "${tmp_zsh_completion}"
+elif command -v wget &>/dev/null; then
+    wget -q "${REPO_URL}/completions/multmux.zsh" -O "${tmp_zsh_completion}"
+else
+    die "Neither curl nor wget found."
+fi
+mv "${tmp_zsh_completion}" "${HOME}/.local/share/zsh/site-functions/_multmux"
+trap - EXIT
+
 # --- User config ---
 #
 # Created once. The user's own file to edit freely, never touched again.
@@ -133,6 +166,37 @@ if [[ ":${PATH}:" != *":${INSTALL_DIR}:"* ]]; then
     echo ""
     echo "  export PATH=\"\${HOME}/.local/bin:\${PATH}\""
     echo ""
+fi
+
+# --- Shell completion activation check ---
+#
+# Best-effort: the files installed above are inert until the user's own
+# shell actually loads them. Checked against a real interactive shell (rc
+# files and any distro-level wiring included), not just this installer's.
+# Runs on every install/update until the user fixes it on their end.
+
+if command -v bash &>/dev/null; then
+    if ! bash -i -c 'declare -F _completion_loader' </dev/null &>/dev/null; then
+        echo ""
+        info "WARNING: bash-completion's dynamic loader isn't active in your bash."
+        info "multmux tab-completion won't work until you install/enable bash-completion,"
+        info "or add this to your ~/.bashrc:"
+        echo ""
+        echo "  source ~/.local/share/bash-completion/completions/multmux"
+        echo ""
+    fi
+fi
+
+if command -v zsh &>/dev/null; then
+    if ! zsh -i -c 'print -l $fpath' </dev/null 2>/dev/null | grep -qFx -- "${HOME}/.local/share/zsh/site-functions"; then
+        echo ""
+        info "WARNING: ~/.local/share/zsh/site-functions is not on your zsh \$fpath."
+        info "multmux tab-completion won't work until you add this to your ~/.zshrc"
+        info "(before compinit):"
+        echo ""
+        echo "  fpath=(~/.local/share/zsh/site-functions \$fpath)"
+        echo ""
+    fi
 fi
 
 info "Done! Run 'multmux start' to begin."

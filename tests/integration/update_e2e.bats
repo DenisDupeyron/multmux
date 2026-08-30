@@ -126,3 +126,47 @@ teardown() {
     [ "${status}" -eq 0 ]
     [[ "${output}" != *"is missing lines"* ]]
 }
+
+@test "update: installs bash completion into the standard bash-completion v2 path" {
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [ -f "${HOME}/.local/share/bash-completion/completions/multmux" ]
+    grep -q "_multmux" "${HOME}/.local/share/bash-completion/completions/multmux"
+}
+
+@test "update: installs zsh completion into site-functions" {
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [ -f "${HOME}/.local/share/zsh/site-functions/_multmux" ]
+    grep -q "#compdef multmux" "${HOME}/.local/share/zsh/site-functions/_multmux"
+}
+
+@test "update: warns when bash-completion's dynamic loader isn't active" {
+    rm -f "${HOME}/.bashrc"
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"bash-completion's dynamic loader isn't active"* ]]
+}
+
+@test "update: stops warning about bash-completion once the user's .bashrc defines the loader" {
+    printf '_completion_loader() { :; }\n' > "${HOME}/.bashrc"
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [[ "${output}" != *"bash-completion's dynamic loader isn't active"* ]]
+}
+
+@test "update: warns when the zsh site-functions dir isn't on \$fpath" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    rm -f "${HOME}/.zshrc"
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"is not on your zsh"* ]]
+}
+
+@test "update: stops warning about zsh \$fpath once the user's .zshrc adds the site-functions dir" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    printf 'fpath=("%s/.local/share/zsh/site-functions" $fpath)\n' "${HOME}" > "${HOME}/.zshrc"
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [[ "${output}" != *"is not on your zsh"* ]]
+}

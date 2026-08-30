@@ -6,8 +6,9 @@ Two kinds of tests, using [bats-core](https://github.com/bats-core/bats-core):
   directly (no subprocess) and call its functions with fixture inputs: the
   CWD-based session-naming pipeline (truncation, collisions, `~`
   substitution), config parsing/loading/healing, the config-drift check,
-  version comparison, and the update-fetch logic (with curl/wget stubbed
-  out, no real network). Fast, no tmux required.
+  version comparison, the update-fetch logic (with curl/wget stubbed
+  out, no real network), and the bash/zsh completion scripts (static
+  syntax validity plus real completion behavior). Fast, no tmux required.
 
 - **tests/integration/**: real (but fully isolated) tmux. Every test gets
   its own throwaway `$HOME` and its own uniquely-named tmux `-L` sockets
@@ -78,5 +79,7 @@ exercised:
   reporting without installing anything, a real install actually landing
   the new version, never touching an existing config file, installing a
   default config only when one is missing, dying clearly with neither
-  curl nor wget available, and failing cleanly when the update server is
-  unreachable.
+  curl nor wget available, failing cleanly when the update server is
+  unreachable, shell completions landing at the right paths, and the
+  bash-completion/zsh `$fpath` activation warnings appearing and then
+  disappearing once the user's own shell profile is fixed.

@@ -28,6 +28,14 @@ wget -qO- https://raw.githubusercontent.com/DenisDupeyron/multmux/main/install.s
 - `tmux` >= 3.2
 - `curl` or `wget`
 
+### Shell completion
+
+Bash and zsh completion for `multmux`'s subcommands is installed automatically
+to `~/.local/share/bash-completion/completions/multmux` and
+`~/.local/share/zsh/site-functions/_multmux`. The installer checks whether your
+shell will actually pick the file up and, on every install and update, prints
+what to add to your shell profile if not.
+
 ## What it does
 
 `multmux` creates a `tmux` layout with:
@@ -133,8 +141,11 @@ your file automatically, the next time you run `start`, `add`, `remove`, or
 
 ```bash
 rm ~/.local/bin/multmux
+rm -rf ~/.local/bin/defaults
 rm ~/.config/multmux.conf        # if you want to remove the config too
 rm -rf ~/.cache/multmux
+rm ~/.local/share/bash-completion/completions/multmux
+rm ~/.local/share/zsh/site-functions/_multmux
 ```
 
 ## Architecture
