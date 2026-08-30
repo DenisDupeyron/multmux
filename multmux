@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.12"
+VERSION="0.5.13"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -756,22 +756,31 @@ cmd_rename() {
     info "Renamed ${current} to ${new_name}."
 }
 
-cmd_list() {
-    if ! inner_running; then
-        die "multmux is not running."
+cmd_status() {
+    if [[ $# -gt 0 ]]; then
+        die "Unknown option: $1"
     fi
 
-    local current
-    current=$(current_inner_session 2>/dev/null || echo "")
+    if outer_running; then
+        echo "Outer: running (socket: ${OUTER_SOCKET})"
+    else
+        echo "Outer: not running"
+    fi
 
-    echo "Inner sessions (socket: ${INNER_SOCKET}):"
-    while IFS= read -r sess; do
-        if [[ "${sess}" == "${current}" ]]; then
-            echo "  * ${sess} (active)"
-        else
-            echo "    ${sess}"
-        fi
-    done <<<"$(inner_session_list)"
+    if inner_running; then
+        echo "Inner: running (socket: ${INNER_SOCKET})"
+        local current
+        current=$(current_inner_session 2>/dev/null || echo "")
+        while IFS= read -r sess; do
+            if [[ "${sess}" == "${current}" ]]; then
+                echo "  * ${sess} (active)"
+            else
+                echo "    ${sess}"
+            fi
+        done <<<"$(inner_session_list)"
+    else
+        echo "Inner: not running"
+    fi
 }
 
 # Internal: invoked only by the window-renamed hook (write_temp_configs).
@@ -1047,7 +1056,7 @@ Commands:
   add [path]            Add a new inner session (default: START_DIR) and switch to it
   remove                Remove the current inner session
   rename <name>         Rename the current inner session
-  list                  List inner sessions
+  status                Show outer/inner running state and inner sessions
   reset-layout          Reset outer pane geometry to configured sizes
   update [--dry-run]    Update multmux to the latest version
   help                  Show this help
@@ -1091,7 +1100,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         shift
         cmd_rename "$@"
         ;;
-    list) cmd_list ;;
+    status)
+        shift
+        cmd_status "$@"
+        ;;
     _auto-rename)
         shift
         cmd_auto_rename "$@"

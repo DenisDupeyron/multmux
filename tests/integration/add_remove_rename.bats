@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Integration tests for cmd_add / cmd_remove / cmd_rename / cmd_list,
+# Integration tests for cmd_add / cmd_remove / cmd_rename / cmd_status,
 # against real (isolated) tmux servers.
 
 setup() {
@@ -179,16 +179,25 @@ teardown() {
     [ "${status}" -eq 0 ]
 }
 
-@test "list: fails clearly when multmux is not running" {
-    run "${MULTMUX_SCRIPT}" list
-    [ "${status}" -ne 0 ]
-    [[ "${output}" == *"not running"* ]]
+@test "status: reports both sockets as not running, and exits 0 (never fails)" {
+    run "${MULTMUX_SCRIPT}" status
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"Outer: not running"* ]]
+    [[ "${output}" == *"Inner: not running"* ]]
 }
 
-@test "list: shows all sessions with the current one marked active" {
+@test "status: reports both sockets running, sessions listed with the active one marked" {
     mm_start
-    run "${MULTMUX_SCRIPT}" list
+    run "${MULTMUX_SCRIPT}" status
     [ "${status}" -eq 0 ]
+    [[ "${output}" == *"Outer: running"* ]]
+    [[ "${output}" == *"Inner: running"* ]]
     [[ "${output}" == *"* ~/ (active)"* ]]
     [[ "${output}" == *"~/-1"* ]]
+}
+
+@test "status: rejects unexpected arguments" {
+    run "${MULTMUX_SCRIPT}" status extra-arg
+    [ "${status}" -ne 0 ]
+    [[ "${output}" == *"Unknown option"* ]]
 }

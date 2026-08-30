@@ -14,7 +14,7 @@ Two kinds of tests, using [bats-core](https://github.com/bats-core/bats-core):
   (via multmux's existing `MULTMUX_OUTER_SOCKET`/`MULTMUX_INNER_SOCKET`/
   `MULTMUX_REPO_URL` overrides), so nothing here ever touches a real
   running multmux or real GitHub. Covers the full command lifecycle
-  (start/stop/attach/detach/add/remove/rename/list/reset-layout), the
+  (start/stop/attach/detach/add/remove/rename/status/reset-layout), the
   real CWD auto-rename tmux hook firing end to end, and the self-update
   pipeline against a local fake HTTP server standing in for GitHub.
 
@@ -60,7 +60,7 @@ exercised:
   nested tmux session, cleaning up orphaned inner sessions from a crashed
   previous run, the `stop` confirmation prompt (accepting/declining,
   case-insensitively), and every "not running yet" guard on
-  attach/detach/add/remove/rename/list/reset-layout.
+  attach/detach/add/remove/rename/status/reset-layout.
 - **add/remove/rename**: collision-suffix assignment on `add`, removing
   down to (and safely replacing) the very last session (this caught a
   real bug where the replacement collided with the not-yet-killed

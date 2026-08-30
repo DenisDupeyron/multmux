@@ -47,7 +47,7 @@ multmux detach                # Detach from multmux, from anywhere (idempotent)
 multmux add [path]            # Add a new inner session (default: START_DIR) and switch to it
 multmux remove                # Remove the current inner session
 multmux rename <name>         # Rename the current inner session
-multmux list                  # List inner sessions
+multmux status                # Show outer/inner running state and inner sessions
 multmux reset-layout          # Reset outer pane geometry to configured sizes
 multmux update [--dry-run]    # Update multmux to the latest version
 multmux help                  # Show help
@@ -88,6 +88,12 @@ Asks for confirmation, then kills all inner sessions and the outer session.
 Renames the current inner session. Rejects empty names, names already in use, and names containing `:` or `.` (reserved by tmux for `session:window.pane` targets).
 
 Once renamed this way, the session stops following its working directory until multmux is restarted.
+
+### `status`
+
+Reports whether the outer and inner sockets are running, and if the inner one is,
+lists its sessions with the currently active one marked. Never fails just because
+multmux isn't running — it tells you that instead.
 
 ### `reset-layout`
 
