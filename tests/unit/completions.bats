@@ -32,6 +32,12 @@ setup() {
     [[ "${output}" == *"start"* ]]
 }
 
+@test "cmd_help: aligns uninstall description with other commands" {
+    run cmd_help
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *$'  update [--dry-run]    Update multmux to the latest version\n  uninstall [--config]  Remove multmux files (asks for confirmation)\n  help                  Show this help'* ]]
+}
+
 # --- Static script validity ---
 
 @test "completions/multmux.bash: valid bash syntax" {
@@ -102,18 +108,24 @@ setup() {
     [[ "${output}" == *"completion-target"* ]]
 }
 
-@test "completions/multmux.zsh: completes --config after 'uninstall'" {
+@test "completions/multmux.zsh: completes command options" {
     command -v zsh &>/dev/null || skip "zsh not installed"
-    run zsh -c "
-        PATH=${MULTMUX_REPO_ROOT}:\${PATH}
-        source '${MULTMUX_REPO_ROOT}/completions/multmux.zsh'
-        words=(multmux uninstall '')
-        _arguments() { state=args; }
-        _values() { print -r -- \"\$2\"; }
-        _multmux
-    "
-    [ "${status}" -eq 0 ]
-    [ "${output}" = "--config" ]
+    for command in start update uninstall; do
+        run zsh -c "
+            PATH=${MULTMUX_REPO_ROOT}:\${PATH}
+            source '${MULTMUX_REPO_ROOT}/completions/multmux.zsh'
+            words=(multmux ${command} '')
+            CURRENT=3
+            compadd() { print -r -- \"\${@: -1}\"; }
+            _multmux
+        "
+        [ "${status}" -eq 0 ]
+        case "${command}" in
+        start) [ "${output}" = "--no-attach" ] ;;
+        update) [ "${output}" = "--dry-run" ] ;;
+        uninstall) [ "${output}" = "--config" ] ;;
+        esac
+    done
 }
 
 @test "completions/multmux.zsh: loads and defines _multmux without error" {

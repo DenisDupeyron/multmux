@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.6.12"
+VERSION="0.6.13"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 INSTALL_DIR="${HOME}/.local/bin"
@@ -897,7 +897,7 @@ Commands:
   status                Show outer/inner running state and inner sessions
   reset-layout          Reset outer pane geometry to configured sizes
   update [--dry-run]    Update multmux to the latest version
-  uninstall [--config]   Remove multmux files (asks for confirmation)
+  uninstall [--config]  Remove multmux files (asks for confirmation)
   help                  Show this help
 
 Configuration: ${CONF_FILE}

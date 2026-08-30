@@ -8,35 +8,23 @@ _multmux() {
     # dispatcher itself uses, so this never drifts out of sync.
     commands=(${(f)"$(multmux _commands 2>/dev/null)"})
 
-    local curcontext="$curcontext" state
-
-    # Standard _arguments -C / ->state dispatch, not a hand-rolled
-    # _describe+case combo: this is what git/docker/kubectl-style
-    # completions use, and it interoperates correctly with completion-UI
-    # plugins (fzf-tab, zsh-autocomplete) that hook into _arguments.
-    _arguments -C \
-        '1: :->command' \
-        '*:: :->args'
-
-    case "${state}" in
-    command)
+    if (( CURRENT == 2 )); then
         _describe -t commands 'multmux command' commands
+        return
+    fi
+
+    case "${words[2]}" in
+    start)
+        compadd -- --no-attach
         ;;
-    args)
-        case "${words[2]}" in
-        start)
-            _values 'option' --no-attach
-            ;;
-        update)
-            _values 'option' --dry-run
-            ;;
-        uninstall)
-            _values 'option' --config
-            ;;
-        add)
-            _files -/
-            ;;
-        esac
+    update)
+        compadd -- --dry-run
+        ;;
+    uninstall)
+        compadd -- --config
+        ;;
+    add)
+        _files -/
         ;;
     esac
 }
