@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.5.9"
+VERSION="0.5.10"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
@@ -648,6 +648,10 @@ cmd_add() {
 }
 
 cmd_remove() {
+    if [[ $# -gt 0 ]]; then
+        die "Unknown option: $1"
+    fi
+
     if ! inner_running; then
         die "multmux is not running. Use 'multmux start' first."
     fi

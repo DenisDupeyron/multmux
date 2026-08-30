@@ -41,6 +41,13 @@ teardown() {
     [[ "${output}" == *"not running"* ]]
 }
 
+@test "remove: rejects unexpected arguments" {
+    mm_start
+    run "${MULTMUX_SCRIPT}" remove extra-arg
+    [ "${status}" -ne 0 ]
+    [[ "${output}" == *"Unknown option"* ]]
+}
+
 @test "remove: removes the current session and switches to another one, session count stays >= 1" {
     mm_start
     before="$(tmux -L "${MULTMUX_INNER_SOCKET}" list-sessions -F '#{session_name}' | wc -l | tr -d ' ')"
