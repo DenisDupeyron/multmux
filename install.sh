@@ -199,10 +199,35 @@ if [[ "${SHELL:-}" == */zsh ]] && command -v zsh &>/dev/null; then
     # directory is on $fpath: a stale cached compinit dump (common with
     # Oh My Zsh/Prezto/'speed up zsh startup' setups that skip rescanning
     # fpath) leaves completion broken even once fpath is correctly set.
-    if [[ "$(zsh -li -c 'print -r -- ${_comps[multmux]:-}' </dev/null 2>/dev/null)" != "_multmux" ]]; then
+    #
+    # This execution-based check alone is not reliable: 'zsh -li -c' does
+    # not faithfully reproduce Oh My Zsh's compinit timing, and can
+    # report success even when a genuinely fresh interactive shell does
+    # not (confirmed directly against a real Oh My Zsh setup). So also
+    # check textually whether ~/.zshrc adds this fpath entry after
+    # sourcing Oh My Zsh, which hides its own compinit call and is the
+    # single most common cause of this exact false-positive.
+    zshrc="${HOME}/.zshrc"
+    omz_before_fpath=false
+    if [[ -f "${zshrc}" ]]; then
+        omz_line=$(grep -n 'source.*oh-my-zsh\.sh' "${zshrc}" 2>/dev/null | head -1 | cut -d: -f1)
+        fpath_line=$(grep -n 'site-functions' "${zshrc}" 2>/dev/null | head -1 | cut -d: -f1)
+        if [[ -n "${omz_line}" && -n "${fpath_line}" ]] && ((fpath_line > omz_line)); then
+            omz_before_fpath=true
+        fi
+    fi
+
+    if [[ "${omz_before_fpath}" == true ]] || [[ "$(zsh -li -c 'print -r -- ${_comps[multmux]:-}' </dev/null 2>/dev/null)" != "_multmux" ]]; then
         echo ""
         info "WARNING: zsh doesn't have tab-completion wired up for multmux yet."
-        info "Make sure this runs before any 'compinit' call in your ~/.zshrc:"
+        if [[ "${omz_before_fpath}" == true ]]; then
+            info "Your ~/.zshrc adds this fpath entry AFTER 'source \$ZSH/oh-my-zsh.sh',"
+            info "which is where Oh My Zsh calls compinit. Move this line ABOVE that"
+            info "'source' line instead:"
+        else
+            info "Make sure this runs before any 'compinit' call in your ~/.zshrc"
+            info "(for Oh My Zsh, that means before 'source \$ZSH/oh-my-zsh.sh'):"
+        fi
         echo ""
         echo "  fpath=(~/.local/share/zsh/site-functions \$fpath)"
         echo ""

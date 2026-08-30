@@ -36,6 +36,11 @@ to `~/.local/share/bash-completion/completions/multmux` and
 shell will actually pick the file up and, on every install and update, prints
 what to add to your shell profile if not.
 
+On Oh My Zsh, the `fpath` line the installer asks you to add must go **before**
+`source $ZSH/oh-my-zsh.sh`, since that's where Oh My Zsh calls `compinit`
+internally. Adding it after (e.g. at the bottom of `~/.zshrc`, the natural
+place to append something) silently does nothing.
+
 ## What it does
 
 `multmux` creates a `tmux` layout with:

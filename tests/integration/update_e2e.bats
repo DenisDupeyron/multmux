@@ -219,6 +219,40 @@ teardown() {
     [[ "${output}" != *"doesn't have tab-completion wired up"* ]]
 }
 
+@test "update: warns specifically about Oh My Zsh ordering when fpath comes after 'source \$ZSH/oh-my-zsh.sh' (regression)" {
+    # The real-world bug: the execution-based _comps check alone can give
+    # a false "it's fine" for this exact ordering mistake ('zsh -li -c'
+    # does not faithfully reproduce Oh My Zsh's compinit timing, verified
+    # directly against a real Oh My Zsh setup), so the textual ordering
+    # check must catch it independently of that check's result.
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    export SHELL=/bin/zsh
+    {
+        echo 'export ZSH="$HOME/.oh-my-zsh"'
+        echo 'plugins=()'
+        echo 'source $ZSH/oh-my-zsh.sh'
+        printf 'fpath=(%s/.local/share/zsh/site-functions $fpath)\n' "${HOME}"
+    } > "${HOME}/.zshrc"
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"doesn't have tab-completion wired up"* ]]
+    [[ "${output}" == *"oh-my-zsh.sh"* ]]
+}
+
+@test "update: does not fire the Oh My Zsh ordering message when fpath comes before 'source \$ZSH/oh-my-zsh.sh'" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    export SHELL=/bin/zsh
+    {
+        echo 'export ZSH="$HOME/.oh-my-zsh"'
+        echo 'plugins=()'
+        printf 'fpath=(%s/.local/share/zsh/site-functions $fpath)\n' "${HOME}"
+        echo 'source $ZSH/oh-my-zsh.sh'
+    } > "${HOME}/.zshrc"
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [[ "${output}" != *"AFTER 'source"* ]]
+}
+
 @test "update: never warns about zsh \$fpath when the user's shell isn't zsh (regression)" {
     export SHELL=/bin/bash
     printf '_completion_loader() { :; }\n' > "${HOME}/.bashrc"
