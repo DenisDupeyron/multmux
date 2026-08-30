@@ -172,10 +172,13 @@ fi
 #
 # Best-effort: the files installed above are inert until the user's own
 # shell actually loads them. Checked against a real interactive shell (rc
-# files and any distro-level wiring included), not just this installer's.
+# files and any distro-level wiring included), not just this installer's,
+# and only for the shell the user actually uses (their $SHELL), so a
+# zsh-only user is never warned about bash-completion just because bash
+# happens to also be installed, or vice versa.
 # Runs on every install/update until the user fixes it on their end.
 
-if command -v bash &>/dev/null; then
+if [[ "${SHELL:-}" == */bash ]] && command -v bash &>/dev/null; then
     if ! bash -i -c 'declare -F _completion_loader' </dev/null &>/dev/null; then
         echo ""
         info "WARNING: bash-completion's dynamic loader isn't active in your bash."
@@ -187,7 +190,7 @@ if command -v bash &>/dev/null; then
     fi
 fi
 
-if command -v zsh &>/dev/null; then
+if [[ "${SHELL:-}" == */zsh ]] && command -v zsh &>/dev/null; then
     if ! zsh -i -c 'print -l $fpath' </dev/null 2>/dev/null | grep -qFx -- "${HOME}/.local/share/zsh/site-functions"; then
         echo ""
         info "WARNING: ~/.local/share/zsh/site-functions is not on your zsh \$fpath."

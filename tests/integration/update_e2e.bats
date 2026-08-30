@@ -142,6 +142,7 @@ teardown() {
 }
 
 @test "update: warns when bash-completion's dynamic loader isn't active" {
+    export SHELL=/bin/bash
     rm -f "${HOME}/.bashrc"
     run "${MM_INSTALLED}" update
     [ "${status}" -eq 0 ]
@@ -149,14 +150,26 @@ teardown() {
 }
 
 @test "update: stops warning about bash-completion once the user's .bashrc defines the loader" {
+    export SHELL=/bin/bash
     printf '_completion_loader() { :; }\n' > "${HOME}/.bashrc"
     run "${MM_INSTALLED}" update
     [ "${status}" -eq 0 ]
     [[ "${output}" != *"bash-completion's dynamic loader isn't active"* ]]
 }
 
+@test "update: never warns about bash-completion when the user's shell isn't bash (regression)" {
+    # SHELL=zsh, no .bashrc at all: the bash-completion check must not run
+    # just because the bash binary happens to be installed too.
+    export SHELL=/bin/zsh
+    rm -f "${HOME}/.bashrc"
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [[ "${output}" != *"bash-completion"* ]]
+}
+
 @test "update: warns when the zsh site-functions dir isn't on \$fpath" {
     command -v zsh &>/dev/null || skip "zsh not installed"
+    export SHELL=/bin/zsh
     rm -f "${HOME}/.zshrc"
     run "${MM_INSTALLED}" update
     [ "${status}" -eq 0 ]
@@ -165,8 +178,18 @@ teardown() {
 
 @test "update: stops warning about zsh \$fpath once the user's .zshrc adds the site-functions dir" {
     command -v zsh &>/dev/null || skip "zsh not installed"
+    export SHELL=/bin/zsh
     printf 'fpath=("%s/.local/share/zsh/site-functions" $fpath)\n' "${HOME}" > "${HOME}/.zshrc"
     run "${MM_INSTALLED}" update
     [ "${status}" -eq 0 ]
     [[ "${output}" != *"is not on your zsh"* ]]
+}
+
+@test "update: never warns about zsh \$fpath when the user's shell isn't zsh (regression)" {
+    export SHELL=/bin/bash
+    printf '_completion_loader() { :; }\n' > "${HOME}/.bashrc"
+    rm -f "${HOME}/.zshrc"
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [[ "${output}" != *"zsh"* ]]
 }
