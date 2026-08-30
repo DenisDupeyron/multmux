@@ -219,6 +219,12 @@ setup() {
 
 # --- name_in_use / unique_session_name ---
 
+@test "validate_session_name: rejects bare tilde reserved for tmux marked pane targets" {
+    run validate_session_name "~"
+    [ "${status}" -ne 0 ]
+    [[ "${output}" == *"reserved by tmux"* ]]
+}
+
 @test "name_in_use: true when the name is in the list" {
     run name_in_use "b" "$(printf 'a\nb\nc')" ""
     [ "${status}" -eq 0 ]

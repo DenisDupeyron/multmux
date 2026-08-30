@@ -131,6 +131,13 @@ teardown() {
     [ "${status}" -ne 0 ]
 }
 
+@test "rename: rejects bare tilde reserved for tmux marked pane targets" {
+    mm_start
+    run "${MULTMUX_SCRIPT}" rename "~"
+    [ "${status}" -ne 0 ]
+    [[ "${output}" == *"reserved by tmux"* ]]
+}
+
 @test "rename: renames the current session and marks it sticky (@multmux_renamed)" {
     mm_start
     run "${MULTMUX_SCRIPT}" rename "my-custom-name"

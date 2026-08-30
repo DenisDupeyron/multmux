@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.6.11"
+VERSION="0.6.12"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 INSTALL_DIR="${HOME}/.local/bin"
@@ -134,6 +134,9 @@ validate_session_name() {
     # tmux allows them in a name but then can't address it via -t.
     local name="$1"
 
+    if [[ "${name}" == "~" ]]; then
+        die "Session name cannot be '~' (reserved by tmux for marked pane targets)."
+    fi
     if [[ -z "${name}" ]]; then
         die "Session name cannot be empty."
     fi
