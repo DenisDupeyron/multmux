@@ -72,6 +72,22 @@ teardown() {
     mm_wait_for "tmux -L '${MULTMUX_INNER_SOCKET}' display-message -p -t '${sid}' '#{session_name}' | grep -qx '~/realcd'" 10
 }
 
+@test "end-to-end: the auto-rename hook runs from an executable path containing spaces" {
+    local install_dir="${BATS_TEST_TMPDIR}/multmux install"
+    local installed="${install_dir}/multmux"
+    mkdir -p "${install_dir}"
+    cp "${MULTMUX_SCRIPT}" "${installed}"
+    chmod +x "${installed}"
+
+    mm_skip_update_check
+    "${installed}" start --no-attach
+    d="$(mm_make_dir "${HOME}/space-path")"
+    sid="$(tmux -L "${MULTMUX_INNER_SOCKET}" list-clients -F '#{session_id}')"
+    tmux -L "${MULTMUX_INNER_SOCKET}" send-keys -t "${sid}" "cd ${d}" Enter
+
+    mm_wait_for "tmux -L '${MULTMUX_INNER_SOCKET}' display-message -p -t '${sid}' '#{session_name}' | grep -qx '~/space-path'" 10
+}
+
 @test "the inner tmux config sets status-interval to 1 (keeps the status line from lagging)" {
     mm_start
     run tmux -L "${MULTMUX_INNER_SOCKET}" show-options -g status-interval

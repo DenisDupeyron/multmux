@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.6.8"
+VERSION="0.6.9"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 INSTALL_DIR="${HOME}/.local/bin"
@@ -99,8 +99,10 @@ write_temp_configs() {
     local dq='"'
     local bsdq='\"'
     local sq="'"
+    local hook_path
+    hook_path="$(shell_single_quote_escape "${SELF_PATH}")"
     local hook_line
-    hook_line="set-hook -g window-renamed ${dq}run-shell ${bsdq}${SELF_PATH} _auto-rename ${sq}#{session_id}${sq}${bsdq}${dq}"
+    hook_line="set-hook -g window-renamed ${dq}run-shell ${bsdq}'${hook_path}' _auto-rename ${sq}#{session_id}${sq}${bsdq}${dq}"
     printf '%s\n' "${hook_line}" >>"${CACHE_DIR}/inner.conf"
 }
 
