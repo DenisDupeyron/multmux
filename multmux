@@ -20,11 +20,10 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.6.7"
+VERSION="0.6.8"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 INSTALL_DIR="${HOME}/.local/bin"
-DEFAULTS_DIR="${INSTALL_DIR}/defaults"
 REINSTALL_COMMAND="curl -fsSL https://raw.githubusercontent.com/DenisDupeyron/multmux/main/install.sh | bash"
 OUTER_SOCKET="${MULTMUX_OUTER_SOCKET:-multmux-outer}"
 INNER_SOCKET="${MULTMUX_INNER_SOCKET:-multmux-inner}"
@@ -33,8 +32,7 @@ TMI="tmux -L ${INNER_SOCKET}"
 # Overridable for tests (see tests/), same pattern as the socket vars above.
 REPO_URL="${MULTMUX_REPO_URL:-https://raw.githubusercontent.com/DenisDupeyron/multmux/main}"
 
-# Absolute path to this script (tmux run-shell hooks don't reliably
-# inherit PATH). Computed before DEFAULT_CONFIG, which is read relative to it.
+# Absolute path to this script. tmux run-shell hooks do not reliably inherit PATH.
 resolve_self_path() {
     local src="${BASH_SOURCE[0]}"
     if command -v realpath &>/dev/null; then
@@ -49,12 +47,7 @@ resolve_self_path() {
 }
 SELF_PATH="$(resolve_self_path)"
 
-# Canonical default config, read from defaults/multmux.conf next to this
-# script rather than embedded here, to avoid a second copy drifting out
-# of sync (it has, historically). A missing file just disables drift
-# checking, not a hard failure.
-DEFAULT_CONFIG="$(cat "$(dirname "${SELF_PATH}")/defaults/multmux.conf" 2>/dev/null || true)"
-
+# Runtime commands only read the user's configuration.
 # Symlink-resolved $HOME. tmux's pane_current_path is already resolved,
 # so comparing against a non-canonical $HOME would miss the "~" substitution.
 HOME_REAL="$(cd "${HOME}" 2>/dev/null && pwd -P || printf '%s' "${HOME}")"
@@ -70,132 +63,6 @@ die() {
 warn() { echo "warning: $*" >&2 || true; }
 info() { echo "multmux: $*" || true; }
 
-# Parse config text into:
-#   CONFIG_BLOCK_NAMES:    ordered top-level variable names
-#   CONFIG_BLOCK_TEXT:     name -> its leading comments/blanks + assignment
-#                          (single line or "VAR=$(cat << 'EOF' ... EOF)")
-#   CONFIG_BLOCK_END_LINE: name -> 1-based line number of its last line
-# Only looks inside a heredoc body for the closing ')'.
-parse_config_blocks() {
-    local content="$1"
-    CONFIG_BLOCK_NAMES=()
-    declare -gA CONFIG_BLOCK_TEXT=()
-    declare -gA CONFIG_BLOCK_END_LINE=()
-
-    local pending="" varname="" in_heredoc=false current="" line_no=0 line
-    while IFS= read -r line; do
-        line_no=$((line_no + 1))
-        if [[ "${in_heredoc}" == true ]]; then
-            current+="${line}"$'\n'
-            if [[ "${line}" == ")" ]]; then
-                CONFIG_BLOCK_TEXT["${varname}"]="${current}"
-                CONFIG_BLOCK_END_LINE["${varname}"]="${line_no}"
-                CONFIG_BLOCK_NAMES+=("${varname}")
-                in_heredoc=false
-                current=""
-            fi
-            continue
-        fi
-        if [[ "${line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; then
-            varname="${BASH_REMATCH[1]}"
-            current="${pending}${line}"$'\n'
-            pending=""
-            if [[ "${line}" == *"<<"*"'EOF'" ]]; then
-                in_heredoc=true
-            else
-                CONFIG_BLOCK_TEXT["${varname}"]="${current}"
-                CONFIG_BLOCK_END_LINE["${varname}"]="${line_no}"
-                CONFIG_BLOCK_NAMES+=("${varname}")
-                current=""
-            fi
-            continue
-        fi
-        pending+="${line}"$'\n'
-    done <<<"${content}"
-}
-
-# Splice each variable named in $@ into CONF_FILE, verbatim from
-# DEFAULT_CONFIG, right after the nearest earlier variable the user's
-# file already has (or at the top). Never touches existing variables.
-# Returns 1 if nothing to add, or if a name isn't in DEFAULT_CONFIG.
-reconcile_missing_vars() {
-    local -a missing=("$@")
-    ((${#missing[@]} > 0)) || return 1
-
-    parse_config_blocks "${DEFAULT_CONFIG}"
-    local -a default_names=("${CONFIG_BLOCK_NAMES[@]}")
-    local -A default_text=()
-    local var
-    for var in "${default_names[@]}"; do
-        default_text["${var}"]="${CONFIG_BLOCK_TEXT[${var}]}"
-    done
-
-    for var in "${missing[@]}"; do
-        [[ -n "${default_text[${var}]+x}" ]] || return 1
-    done
-
-    local user_content
-    user_content="$(cat "${CONF_FILE}")" || return 1
-
-    parse_config_blocks "${user_content}"
-    local -A user_end_line=()
-    for var in "${CONFIG_BLOCK_NAMES[@]}"; do
-        user_end_line["${var}"]="${CONFIG_BLOCK_END_LINE[${var}]}"
-    done
-
-    local -A default_index=()
-    local i
-    for ((i = 0; i < ${#default_names[@]}; i++)); do
-        default_index["${default_names[i]}"]="${i}"
-    done
-
-    # Key: user-file line number to insert after (0 = top of file).
-    local -A insert_after=()
-    local -a added_report=()
-    for var in "${missing[@]}"; do
-        local idx="${default_index[${var}]}" anchor_line=0
-        for ((i = idx - 1; i >= 0; i--)); do
-            local candidate="${default_names[i]}"
-            if [[ -n "${user_end_line[${candidate}]+x}" ]]; then
-                anchor_line="${user_end_line[${candidate}]}"
-                break
-            fi
-        done
-        insert_after["${anchor_line}"]+="${default_text[${var}]}"
-        added_report+=("${default_text[${var}]}")
-    done
-
-    # Rebuild the file, splicing insert_after[N] right after user line N.
-    local -a user_lines=()
-    # Process substitution, not <<<: for an empty user_content, a
-    # here-string's extra trailing newline would produce one spurious
-    # empty line element instead of zero.
-    mapfile -t user_lines < <(printf '%s' "${user_content}")
-    local new_content=""
-    [[ -n "${insert_after[0]+x}" ]] && new_content+="${insert_after[0]}"
-    local n
-    for ((n = 0; n < ${#user_lines[@]}; n++)); do
-        new_content+="${user_lines[n]}"$'\n'
-        local ln=$((n + 1))
-        [[ -n "${insert_after[${ln}]+x}" ]] && new_content+="${insert_after[${ln}]}"
-    done
-
-    printf '%s' "${new_content}" >"${CONF_FILE}"
-
-    info "Your config is missing settings added in a newer version. Updating ${CONF_FILE}:"
-    local block
-    for block in "${added_report[@]}"; do
-        # Process substitution, not <<<: a here-string's extra trailing
-        # newline would add a spurious empty line.
-        while IFS= read -r line; do
-            [[ -n "${line}" ]] || continue
-            echo "    + ${line}"
-        done < <(printf '%s' "${block}")
-    done
-    info "Config updated. Continuing..."
-    return 0
-}
-
 load_config() {
     [[ -f "${CONF_FILE}" ]] || die "Config not found: ${CONF_FILE}"
     # shellcheck disable=SC1090
@@ -206,19 +73,8 @@ load_config() {
     for var in "${required_vars[@]}"; do
         [[ -n "${!var+x}" ]] || missing_vars+=("${var}")
     done
-
     if ((${#missing_vars[@]} > 0)); then
-        if reconcile_missing_vars "${missing_vars[@]}"; then
-            # shellcheck disable=SC1090
-            source "${CONF_FILE}"
-        fi
-        missing_vars=()
-        for var in "${required_vars[@]}"; do
-            [[ -n "${!var+x}" ]] || missing_vars+=("${var}")
-        done
-        if ((${#missing_vars[@]} > 0)); then
-            die "Config ${CONF_FILE} is missing required variable(s): ${missing_vars[*]}"
-        fi
+        die "Config ${CONF_FILE} is missing required variable(s): ${missing_vars[*]}. Run 'multmux update' to add settings from the current defaults."
     fi
 
     # Worst case: one full-size component plus the leading "…/" marker.
@@ -859,65 +715,6 @@ perform_update() {
     fi
 }
 
-# --- Config drift check (tmux config blocks) ---
-#
-# BASE_CONF/OUTER_CONF/INNER_CONF are freeform, user-owned blocks, so
-# this only warns about default lines missing from the user's copy.
-# Never modifies CONF_FILE. Runs from cmd_update, not on every start.
-
-# Print the value $2 would have if config text $1 were sourced, in an
-# isolated subshell.
-config_var_value() {
-    local config_text="$1" var="$2"
-    (
-        eval "${config_text}" &>/dev/null
-        printf '%s' "${!var}"
-    ) 2>/dev/null || true
-}
-
-# Warn about lines in $1's value of $3 missing from $2's value of $3.
-# Blank/comment-only lines are skipped: reworded prose isn't real drift.
-# $1/$2 are full config texts, $3 is BASE_CONF/OUTER_CONF/INNER_CONF.
-report_block_drift() {
-    local default_config="$1" conf_file="$2" block="$3"
-    local default_value user_value
-    default_value="$(config_var_value "${default_config}" "${block}")"
-    user_value="$(config_var_value "$(cat "${conf_file}")" "${block}")"
-
-    local -a missing_lines=()
-    local line already ul
-    while IFS= read -r line; do
-        [[ -n "${line}" ]] || continue
-        [[ "${line}" =~ ^[[:space:]]*# ]] && continue
-        already=false
-        while IFS= read -r ul; do
-            if [[ "${ul}" == "${line}" ]]; then
-                already=true
-                break
-            fi
-        done <<<"${user_value}"
-        [[ "${already}" == false ]] && missing_lines+=("${line}")
-    done <<<"${default_value}"
-
-    if ((${#missing_lines[@]} > 0)); then
-        warn "your ${conf_file}'s ${block} is missing lines present in the current bundled default:"
-        local l
-        for l in "${missing_lines[@]}"; do
-            echo "    ${l}" >&2
-        done
-    fi
-}
-
-# $1 is the freshly-installed bundled default, not this running version's.
-check_tmux_config_drift() {
-    local default_config="$1"
-    [[ -f "${CONF_FILE}" ]] || return 0
-    local block
-    for block in BASE_CONF OUTER_CONF INNER_CONF; do
-        report_block_drift "${default_config}" "${CONF_FILE}" "${block}"
-    done
-}
-
 # Print a one-line notice if a check found something to report.
 # Safe to call even if no check has ever run.
 show_update_notice_if_cached() {
@@ -992,14 +789,6 @@ check_for_update() {
     return 0
 }
 
-# Internal: runs drift check with THIS version's own DEFAULT_CONFIG and
-# logic. cmd_update re-execs SELF_PATH into this instead of calling it
-# in-process, because both the default text and the comparison logic
-# itself must come from the freshly-installed code, not the old process.
-cmd_check_config_drift() {
-    check_tmux_config_drift "${DEFAULT_CONFIG}"
-}
-
 # Internal: the public command names, one per line. Both completion
 # scripts (completions/multmux.bash, completions/multmux.zsh) call
 # 'multmux _commands' to get this list, so they can't drift out of sync
@@ -1047,10 +836,6 @@ cmd_update() {
     fi
 
     perform_update
-
-    # Re-exec the freshly-installed SELF_PATH to run its own drift check.
-    # This process is still running the old code.
-    "${SELF_PATH}" _check-config-drift || true
 }
 
 cmd_uninstall() {
@@ -1076,7 +861,7 @@ cmd_uninstall() {
     rm -f "${INSTALL_DIR}/multmux" \
         "${HOME}/.local/share/bash-completion/completions/multmux" \
         "${HOME}/.local/share/zsh/site-functions/_multmux"
-    rm -rf "${DEFAULTS_DIR}" "${CACHE_DIR}"
+    rm -rf "${CACHE_DIR}"
     [[ "${remove_config}" == true ]] && rm -f "${CONF_FILE}"
 
     info "Uninstalled. Reinstall with:"
@@ -1150,7 +935,6 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         shift
         cmd_auto_rename "$@"
         ;;
-    _check-config-drift) cmd_check_config_drift ;;
     _commands) cmd_commands ;;
     reset-layout)
         shift

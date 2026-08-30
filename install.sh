@@ -25,6 +25,177 @@ REPO_URL="${MULTMUX_REPO_URL:-https://raw.githubusercontent.com/DenisDupeyron/mu
 INSTALL_DIR="${HOME}/.local/bin"
 CONF_DIR="${HOME}/.config"
 
+REQUIRED_CONFIG_VARS=(START_DIR MAIN_PANE_WIDTH OVERFLOW_PANES INNER_SESSIONS BASE_CONF OUTER_CONF INNER_CONF SESSION_NAME_COMPONENT_MAX SESSION_NAME_TOTAL_MAX)
+tmp_multmux=""
+tmp_defaults=""
+tmp_bash_completion=""
+tmp_zsh_completion=""
+
+cleanup() {
+    rm -f "${tmp_multmux}" "${tmp_defaults}" "${tmp_bash_completion}" "${tmp_zsh_completion}"
+}
+trap cleanup EXIT
+
+parse_config_blocks() {
+    local content="$1"
+    CONFIG_BLOCK_NAMES=()
+    declare -gA CONFIG_BLOCK_TEXT=()
+    declare -gA CONFIG_BLOCK_END_LINE=()
+
+    local pending="" varname="" in_heredoc=false current="" line_no=0 line
+    while IFS= read -r line; do
+        line_no=$((line_no + 1))
+        if [[ "${in_heredoc}" == true ]]; then
+            current+="${line}"$'\n'
+            if [[ "${line}" == ")" ]]; then
+                CONFIG_BLOCK_TEXT["${varname}"]="${current}"
+                CONFIG_BLOCK_END_LINE["${varname}"]="${line_no}"
+                CONFIG_BLOCK_NAMES+=("${varname}")
+                in_heredoc=false
+                current=""
+            fi
+            continue
+        fi
+        if [[ "${line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+            varname="${BASH_REMATCH[1]}"
+            current="${pending}${line}"$'\n'
+            pending=""
+            if [[ "${line}" == *"<<"*"'EOF'" ]]; then
+                in_heredoc=true
+            else
+                CONFIG_BLOCK_TEXT["${varname}"]="${current}"
+                CONFIG_BLOCK_END_LINE["${varname}"]="${line_no}"
+                CONFIG_BLOCK_NAMES+=("${varname}")
+                current=""
+            fi
+            continue
+        fi
+        pending+="${line}"$'\n'
+    done <<<"${content}"
+}
+
+reconcile_missing_vars() {
+    local -a missing=("$@")
+    ((${#missing[@]} > 0)) || return 1
+
+    local default_content
+    default_content="$(cat "${tmp_defaults}")"
+    parse_config_blocks "${default_content}"
+    local -a default_names=("${CONFIG_BLOCK_NAMES[@]}")
+    local -A default_text=()
+    local var
+    for var in "${default_names[@]}"; do
+        default_text["${var}"]="${CONFIG_BLOCK_TEXT[${var}]}"
+    done
+    for var in "${missing[@]}"; do
+        [[ -n "${default_text[${var}]+x}" ]] || die "Bundled defaults are missing required variable: ${var}"
+    done
+
+    local user_content
+    user_content="$(cat "${CONF_DIR}/multmux.conf")"
+    parse_config_blocks "${user_content}"
+    local -A user_end_line=()
+    for var in "${CONFIG_BLOCK_NAMES[@]}"; do
+        user_end_line["${var}"]="${CONFIG_BLOCK_END_LINE[${var}]}"
+    done
+    local -A default_index=()
+    local i
+    for ((i = 0; i < ${#default_names[@]}; i++)); do
+        default_index["${default_names[i]}"]="${i}"
+    done
+    local -A insert_after=()
+    for var in "${missing[@]}"; do
+        local idx="${default_index[${var}]}" anchor_line=0
+        for ((i = idx - 1; i >= 0; i--)); do
+            local candidate="${default_names[i]}"
+            if [[ -n "${user_end_line[${candidate}]+x}" ]]; then
+                anchor_line="${user_end_line[${candidate}]}"
+                break
+            fi
+        done
+        insert_after["${anchor_line}"]+="${default_text[${var}]}"
+    done
+    local -a user_lines=()
+    mapfile -t user_lines < <(printf '%s' "${user_content}")
+    local new_content="" n
+    [[ -n "${insert_after[0]+x}" ]] && new_content+="${insert_after[0]}"
+    for ((n = 0; n < ${#user_lines[@]}; n++)); do
+        new_content+="${user_lines[n]}"$'\n'
+        local line_no=$((n + 1))
+        [[ -n "${insert_after[${line_no}]+x}" ]] && new_content+="${insert_after[${line_no}]}"
+    done
+    printf '%s' "${new_content}" >"${CONF_DIR}/multmux.conf"
+
+    info "Added settings from the current defaults to ${CONF_DIR}/multmux.conf:"
+    for var in "${missing[@]}"; do
+        printf '    + %s\n' "${var}"
+    done
+}
+
+migrate_config() {
+    local config_file="${CONF_DIR}/multmux.conf"
+    [[ -f "${config_file}" ]] || return 0
+
+    local evaluated_missing
+    evaluated_missing="$(
+        bash -c '
+            source "$1" >/dev/null || exit $?
+            shift
+            for var; do
+                declare -p "${var}" &>/dev/null || printf "%s\n" "${var}"
+            done
+        ' _ "${config_file}" "${REQUIRED_CONFIG_VARS[@]}"
+    )" || die "Could not load configuration: ${config_file}"
+
+    local -a missing=()
+    local var
+    while IFS= read -r var; do
+        [[ -n "${var}" ]] && missing+=("${var}")
+    done <<<"${evaluated_missing}"
+    reconcile_missing_vars "${missing[@]}" || true
+}
+
+config_var_value() {
+    local config_text="$1" var="$2"
+    (
+        eval "${config_text}" &>/dev/null
+        printf '%s' "${!var}"
+    ) 2>/dev/null || true
+}
+report_block_drift() {
+    local default_config="$1" conf_file="$2" block="$3"
+    local default_value user_value
+    default_value="$(config_var_value "${default_config}" "${block}")"
+    user_value="$(config_var_value "$(cat "${conf_file}")" "${block}")"
+    local -a missing_lines=()
+    local line already user_line
+    while IFS= read -r line; do
+        [[ -n "${line}" ]] || continue
+        [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+        already=false
+        while IFS= read -r user_line; do
+            [[ "${user_line}" == "${line}" ]] && { already=true; break; }
+        done <<<"${user_value}"
+        [[ "${already}" == false ]] && missing_lines+=("${line}")
+    done <<<"${default_value}"
+    if ((${#missing_lines[@]} > 0)); then
+        info "WARNING: ${conf_file}'s ${block} is missing lines present in the current defaults:"
+        for line in "${missing_lines[@]}"; do
+            printf '    %s\n' "${line}"
+        done
+    fi
+}
+
+check_tmux_config_drift() {
+    [[ -f "${CONF_DIR}/multmux.conf" ]] || return 0
+    local default_config
+    default_config="$(cat "${tmp_defaults}")"
+    local block
+    for block in BASE_CONF OUTER_CONF INNER_CONF; do
+        report_block_drift "${default_config}" "${CONF_DIR}/multmux.conf" "${block}"
+    done
+}
+
 info() { echo "[multmux] $*"; }
 die() {
     echo "[multmux] ERROR: $*" >&2
@@ -61,15 +232,12 @@ info "Dependencies OK (bash ${BASH_VERSION}, tmux ${tmux_version})"
 
 # --- Install ---
 
-info "Installing multmux to ${INSTALL_DIR}/multmux..."
+info "Preparing multmux for ${INSTALL_DIR}/multmux..."
 mkdir -p "${INSTALL_DIR}"
 
-# Download to a temp file, then move it into place atomically: 'multmux
-# update' may run this while that exact file is still running, and mv
-# (rename) doesn't touch the original file's data.
+# Stage every downloaded artifact before changing the installed executable.
+# A failed update then leaves the prior runtime and user configuration usable.
 tmp_multmux=$(mktemp)
-trap 'rm -f "${tmp_multmux}"' EXIT
-
 if command -v curl &>/dev/null; then
     curl -fsSL "${REPO_URL}/multmux" -o "${tmp_multmux}"
 elif command -v wget &>/dev/null; then
@@ -77,24 +245,10 @@ elif command -v wget &>/dev/null; then
 else
     die "Neither curl nor wget found."
 fi
-
 chmod +x "${tmp_multmux}"
-mv "${tmp_multmux}" "${INSTALL_DIR}/multmux"
-trap - EXIT
 
-# --- Bundled defaults ---
-#
-# Not the user's config (see below). This is multmux's own reference
-# copy of the shipped defaults, always safe to refresh in place. multmux
-# reads it at startup to reconcile/drift-check the user's config.
-
-info "Installing bundled defaults to ${INSTALL_DIR}/defaults/multmux.conf..."
-mkdir -p "${INSTALL_DIR}/defaults"
-
-# Same atomic download-then-rename as above, for the same reason.
+info "Downloading current defaults..."
 tmp_defaults=$(mktemp)
-trap 'rm -f "${tmp_defaults}"' EXIT
-
 if command -v curl &>/dev/null; then
     curl -fsSL "${REPO_URL}/defaults/multmux.conf" -o "${tmp_defaults}"
 elif command -v wget &>/dev/null; then
@@ -103,20 +257,8 @@ else
     die "Neither curl nor wget found."
 fi
 
-mv "${tmp_defaults}" "${INSTALL_DIR}/defaults/multmux.conf"
-trap - EXIT
-
-# --- Shell completions ---
-#
-# Not user config either. Regenerated in place on every install/update,
-# same atomic download-then-rename pattern as multmux itself.
-
-info "Installing shell completions..."
-mkdir -p "${HOME}/.local/share/bash-completion/completions"
-mkdir -p "${HOME}/.local/share/zsh/site-functions"
-
+info "Preparing shell completions..."
 tmp_bash_completion=$(mktemp)
-trap 'rm -f "${tmp_bash_completion}"' EXIT
 if command -v curl &>/dev/null; then
     curl -fsSL "${REPO_URL}/completions/multmux.bash" -o "${tmp_bash_completion}"
 elif command -v wget &>/dev/null; then
@@ -124,11 +266,8 @@ elif command -v wget &>/dev/null; then
 else
     die "Neither curl nor wget found."
 fi
-mv "${tmp_bash_completion}" "${HOME}/.local/share/bash-completion/completions/multmux"
-trap - EXIT
 
 tmp_zsh_completion=$(mktemp)
-trap 'rm -f "${tmp_zsh_completion}"' EXIT
 if command -v curl &>/dev/null; then
     curl -fsSL "${REPO_URL}/completions/multmux.zsh" -o "${tmp_zsh_completion}"
 elif command -v wget &>/dev/null; then
@@ -136,19 +275,31 @@ elif command -v wget &>/dev/null; then
 else
     die "Neither curl nor wget found."
 fi
-mv "${tmp_zsh_completion}" "${HOME}/.local/share/zsh/site-functions/_multmux"
-trap - EXIT
 
 # --- User config ---
 #
-# Created once. The user's own file to edit freely, never touched again.
+# Created from the temporary defaults on first install. Later installs merge
+# only required top-level settings and report missing tmux directives.
 
+mkdir -p "${CONF_DIR}"
 if [[ ! -f "${CONF_DIR}/multmux.conf" ]]; then
     info "Installing default config to ${CONF_DIR}/multmux.conf..."
-    cp "${INSTALL_DIR}/defaults/multmux.conf" "${CONF_DIR}/multmux.conf"
+    cp "${tmp_defaults}" "${CONF_DIR}/multmux.conf"
 else
-    info "Config already exists at ${CONF_DIR}/multmux.conf, skipping."
+    migrate_config
 fi
+check_tmux_config_drift
+
+info "Installing multmux..."
+mv "${tmp_multmux}" "${INSTALL_DIR}/multmux"
+tmp_multmux=""
+
+mkdir -p "${HOME}/.local/share/bash-completion/completions"
+mkdir -p "${HOME}/.local/share/zsh/site-functions"
+mv "${tmp_bash_completion}" "${HOME}/.local/share/bash-completion/completions/multmux"
+tmp_bash_completion=""
+mv "${tmp_zsh_completion}" "${HOME}/.local/share/zsh/site-functions/_multmux"
+tmp_zsh_completion=""
 
 # --- Version ---
 

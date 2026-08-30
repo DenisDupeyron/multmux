@@ -34,9 +34,8 @@ mm_set_fake_home() {
     mkdir -p "${HOME}/.config" "${HOME}/.cache" "${HOME}/.local/bin"
 }
 
-# Install the repo's real defaults/multmux.conf into the fake $HOME,
-# exactly like a fresh 'install.sh' run would. Most tests want this: it's
-# the actual config shape multmux expects to find at CONF_FILE.
+# Copy the shipped defaults into a fake user configuration. Tests use this
+# fixture to represent a prior installation.
 mm_install_default_config() {
     cp "${MULTMUX_REPO_ROOT}/defaults/multmux.conf" "${HOME}/.config/multmux.conf"
 }
@@ -153,10 +152,8 @@ mm_start() {
 }
 
 # Start a local, throwaway HTTP file server exposing a scratch directory
-# that looks like the multmux repo root (multmux, install.sh,
-# defaults/multmux.conf), and point MULTMUX_REPO_URL at it. This lets the
-# whole self-update pipeline (fetch_latest_version, perform_update,
-# install.sh, cmd_update's drift check) be tested for real, offline,
+# that looks like a multmux checkout. The update tests use it to exercise the
+# installer, its temporary defaults download, and configuration migration
 # without touching actual GitHub. Caller must eventually call
 # mm_stop_fake_repo_server. Sets MM_FAKE_REPO_DIR and MM_FAKE_REPO_PID.
 mm_start_fake_repo_server() {
@@ -213,13 +210,8 @@ mm_stop_fake_repo_server() {
 }
 
 # Install a copy of the multmux script under test into the fake $HOME's
-# ~/.local/bin, matching a real installation, and return that path. Tests
-# of 'multmux update' must invoke THIS path (not $MULTMUX_SCRIPT directly):
-# SELF_PATH is resolved from how the running script was invoked
-# (BASH_SOURCE[0]), and cmd_update's whole "re-exec the freshly-installed
-# binary" design assumes SELF_PATH is the same file install.sh just
-# overwrote, which is only true when multmux is run from its installed
-# location, exactly like a real user's PATH-resolved 'multmux' command.
+# ~/.local/bin, matching a real installation. Tests invoke this path so
+# updates overwrite the executable a real user runs.
 mm_install_self() {
     mkdir -p "${HOME}/.local/bin"
     cp "${MULTMUX_SCRIPT}" "${HOME}/.local/bin/multmux"

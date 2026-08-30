@@ -3,12 +3,10 @@
 Two kinds of tests, using [bats-core](https://github.com/bats-core/bats-core):
 
 - **tests/unit/**: pure-logic tests. These `source` the `multmux` script
-  directly (no subprocess) and call its functions with fixture inputs: the
-  CWD-based session-naming pipeline (truncation, collisions, `~`
-  substitution), config parsing/loading/healing, the config-drift check,
-  version comparison, the update-fetch logic (with curl/wget stubbed
-  out, no real network), and the bash/zsh completion scripts (static
-  syntax validity plus real completion behavior). Fast, no tmux required.
+  directly and call functions with fixture inputs. Coverage includes CWD-based
+  session naming, configuration parsing and validation, version comparison,
+  update fetching with curl or wget stubbed, and bash and zsh completions.
+  These tests are fast and do not require tmux.
 
 - **tests/integration/**: real (but fully isolated) tmux. Every test gets
   its own throwaway `$HOME` and its own uniquely-named tmux `-L` sockets
@@ -43,16 +41,12 @@ exercised:
   symlinked and nonexistent directories, the lowest-available-suffix
   collision rule (including reusing a freed gap), and a session renaming
   itself to its own name never counting as a collision.
-- **Config loading**: missing config file, missing-but-healable required
-  variables (auto-healed and reported), missing variables that aren't in
-  the bundled default either (hard failure), and the
-  `SESSION_NAME_TOTAL_MAX >= COMPONENT_MAX + 2` validation boundary.
-- **Config drift check**: real missing config lines are always caught,
-  comment-only differences (any wording, indented or not) are never
-  reported, even alongside genuine unrelated drift. And, the strongest
-  regression test in the suite, `multmux update`'s drift check reflects
-  the *freshly-installed* binary's own logic and defaults, not whatever
-  this process happened to have loaded before the update ran.
+- **Config loading:** missing configuration files, required variables rejected
+  without mutation, and the `SESSION_NAME_TOTAL_MAX >= COMPONENT_MAX + 2`
+  validation boundary.
+- **Config update:** fresh configuration creation, update-time migration of
+  missing required top-level settings, tmux directive drift reporting, and no
+  persistent downloaded defaults after installation.
 - **Version/update fetching**: numeric (not lexicographic) version
   comparison, curl-then-wget fallback, both tools missing, empty/
   malformed/timed-out responses, and SIGPIPE-style failures never
@@ -76,11 +70,8 @@ exercised:
   suppressing it, collision suffixing against a different session, and
   `status-interval 1` actually being set (the fix for the status line
   lagging behind a rename).
-- **Self-update**: dry-run up-to-date/newer-available/unreachable-server
-  reporting without installing anything, a real install actually landing
-  the new version, never touching an existing config file, installing a
-  default config only when one is missing, dying clearly with neither
-  curl nor wget available, failing cleanly when the update server is
-  unreachable, shell completions landing at the right paths, and the
-  bash-completion/zsh `$fpath` activation warnings appearing and then
-  disappearing once the user's own shell profile is fixed.
+- **Self-update:** dry-run up-to-date, newer-version, and unreachable-server
+  reporting without installing. The integration tests cover executable updates,
+  custom config preservation, fresh config creation, required-setting migration,
+  tmux directive drift reporting, installer download cleanup, completion paths,
+  and shell-profile activation warnings.

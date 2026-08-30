@@ -1,14 +1,7 @@
 #!/usr/bin/env bats
-# End-to-end tests for the self-update pipeline (fetch_latest_version,
-# perform_update -> install.sh, cmd_update, and the drift check that runs
-# through it), against a real local HTTP server standing in for GitHub.
-# No real network access is used.
-#
-# All 'update'/'update --dry-run' invocations here go through a copy of
-# multmux pre-installed at $HOME/.local/bin/multmux (mm_install_self),
-# matching how a real user runs it (see mm_install_self's comment):
-# cmd_update's re-exec of SELF_PATH only picks up the freshly-installed
-# code when SELF_PATH is the same file install.sh overwrites.
+# End-to-end tests for the self-update pipeline against a local fake HTTP
+# server. Updates install a fresh executable, migrate required top-level
+# settings, and report missing tmux directives without retaining defaults.
 
 setup() {
     load '../helpers/common'
@@ -60,19 +53,22 @@ teardown() {
     [[ "${output}" == *"9.9.9"* ]]
 }
 
-@test "update: installs the default config if none exists yet" {
-    rm -f "${HOME}/.config/multmux.conf"
+@test "update: creates configuration and its parent directory when absent" {
+    rm -rf "${HOME}/.config"
+
     run "${MM_INSTALLED}" update
+
     [ "${status}" -eq 0 ]
     [ -f "${HOME}/.config/multmux.conf" ]
 }
 
-@test "update: never touches an existing config file" {
+@test "update: preserves custom configuration content" {
     mm_install_default_config
     echo "# my own custom marker line" >> "${HOME}/.config/multmux.conf"
+
     run "${MM_INSTALLED}" update
+
     [ "${status}" -eq 0 ]
-    [[ "${output}" == *"Config already exists"* ]]
     grep -q "my own custom marker line" "${HOME}/.config/multmux.conf"
 }
 
@@ -93,13 +89,48 @@ teardown() {
     [ "${status}" -ne 0 ]
 }
 
-@test "update: end-to-end drift check catches a real new config line through the freshly-installed binary" {
+@test "update: download failure leaves the current executable and config unchanged" {
     mm_install_default_config
-    mm_fake_repo_add_inner_conf_line "set -g some-brand-new-real-option 1"
+    sed -i.bak '/^OVERFLOW_PANES=/d' "${HOME}/.config/multmux.conf"
+    mm_fake_repo_set_version "9.9.9"
+    rm "${MM_FAKE_REPO_DIR}/completions/multmux.zsh"
+
     run "${MM_INSTALLED}" update
+
+    [ "${status}" -ne 0 ]
+    run "${MM_INSTALLED}" --version
+    [[ "${output}" != *"9.9.9"* ]]
+    ! grep -q '^OVERFLOW_PANES=' "${HOME}/.config/multmux.conf"
+}
+
+@test "update: migrates missing required settings and reports tmux drift" {
+    mm_install_default_config
+    sed -i.bak '/^OVERFLOW_PANES=/d' "${HOME}/.config/multmux.conf"
+    mm_fake_repo_add_inner_conf_line "set -g some-brand-new-real-option 1"
+
+    run "${MM_INSTALLED}" update
+
     [ "${status}" -eq 0 ]
+    grep -q '^OVERFLOW_PANES=' "${HOME}/.config/multmux.conf"
+    [[ "${output}" == *"Added settings from the current defaults"* ]]
     [[ "${output}" == *"INNER_CONF is missing"* ]]
     [[ "${output}" == *"some-brand-new-real-option"* ]]
+    [ ! -e "${HOME}/.local/bin/defaults" ]
+}
+
+@test "update: evaluates configuration before identifying missing settings" {
+    mm_install_default_config
+    sed -i.bak '/^OVERFLOW_PANES=/d' "${HOME}/.config/multmux.conf"
+    cat >>"${HOME}/.config/multmux.conf" <<'EOF'
+if false; then
+OVERFLOW_PANES=3
+fi
+EOF
+
+    run "${MM_INSTALLED}" update
+
+    [ "${status}" -eq 0 ]
+    [ "$(grep -c '^OVERFLOW_PANES=' "${HOME}/.config/multmux.conf")" -eq 2 ]
 }
 
 @test "update: end-to-end drift check reports nothing for a comment-only difference (regression)" {
@@ -110,22 +141,6 @@ teardown() {
     [[ "${output}" != *"is missing lines"* ]]
 }
 
-@test "update: the drift check reflects the freshly-installed script's content, not the pre-update one (regression)" {
-    # This is the core regression for the "stale in-memory code" bug: the
-    # PRE-update installed copy (MM_INSTALLED, i.e. this process's own
-    # code) still has the status-interval line. The fake repo's NEWER
-    # version being installed does NOT (simulated removal), and neither
-    # does the user's config. If cmd_update ran the check with its own
-    # stale in-memory logic/defaults instead of re-execing the freshly
-    # installed one, this would wrongly report drift.
-    mm_install_default_config
-    sed -i.bak '/set -g status-interval 1/d' "${MM_FAKE_REPO_DIR}/multmux"
-    sed -i.bak '/set -g status-interval 1/d' "${MM_FAKE_REPO_DIR}/defaults/multmux.conf"
-    sed -i.bak '/set -g status-interval 1/d' "${HOME}/.config/multmux.conf"
-    run "${MM_INSTALLED}" update
-    [ "${status}" -eq 0 ]
-    [[ "${output}" != *"is missing lines"* ]]
-}
 
 @test "update: installs bash completion into the standard bash-completion v2 path" {
     run "${MM_INSTALLED}" update

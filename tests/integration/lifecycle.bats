@@ -168,10 +168,9 @@ teardown() {
 
 @test "uninstall: declining confirmation preserves installed files" {
     installed="$(mm_install_self)"
-    mkdir -p "${HOME}/.local/bin/defaults" "${HOME}/.cache/multmux" \
+    mkdir -p "${HOME}/.cache/multmux" \
         "${HOME}/.local/share/bash-completion/completions" \
         "${HOME}/.local/share/zsh/site-functions"
-    cp "${MULTMUX_REPO_ROOT}/defaults/multmux.conf" "${HOME}/.local/bin/defaults/multmux.conf"
     touch "${HOME}/.cache/multmux/last_update_check" \
         "${HOME}/.local/share/bash-completion/completions/multmux" \
         "${HOME}/.local/share/zsh/site-functions/_multmux"
@@ -182,19 +181,18 @@ teardown() {
     [[ "${output}" == *"Aborted"* ]]
     [ -f "${installed}" ]
     [ -f "${HOME}/.config/multmux.conf" ]
-    [ -f "${HOME}/.local/bin/defaults/multmux.conf" ]
     [ -f "${HOME}/.cache/multmux/last_update_check" ]
     [ -f "${HOME}/.local/share/bash-completion/completions/multmux" ]
     [ -f "${HOME}/.local/share/zsh/site-functions/_multmux" ]
 }
 
-@test "uninstall: confirmed removal keeps configuration by default and prints reinstall command" {
+@test "uninstall: confirmed removal preserves unrelated defaults and clears multmux files" {
     installed="$(mm_install_self)"
     mkdir -p "${HOME}/.local/bin/defaults" "${HOME}/.cache/multmux" \
         "${HOME}/.local/share/bash-completion/completions" \
         "${HOME}/.local/share/zsh/site-functions"
-    cp "${MULTMUX_REPO_ROOT}/defaults/multmux.conf" "${HOME}/.local/bin/defaults/multmux.conf"
-    touch "${HOME}/.cache/multmux/last_update_check" \
+    touch "${HOME}/.local/bin/defaults/unrelated.conf" \
+        "${HOME}/.cache/multmux/last_update_check" \
         "${HOME}/.local/share/bash-completion/completions/multmux" \
         "${HOME}/.local/share/zsh/site-functions/_multmux"
 
@@ -203,7 +201,7 @@ teardown() {
     [ "${status}" -eq 0 ]
     [ -f "${HOME}/.config/multmux.conf" ]
     [ ! -e "${installed}" ]
-    [ ! -e "${HOME}/.local/bin/defaults/multmux.conf" ]
+    [ -f "${HOME}/.local/bin/defaults/unrelated.conf" ]
     [ ! -e "${HOME}/.cache/multmux" ]
     [ ! -e "${HOME}/.local/share/bash-completion/completions/multmux" ]
     [ ! -e "${HOME}/.local/share/zsh/site-functions/_multmux" ]

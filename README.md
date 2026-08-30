@@ -85,13 +85,13 @@ Asks for confirmation, then kills all inner sessions and the outer session.
 
 ### `uninstall`
 
-`uninstall` asks for confirmation and removes the multmux executable, bundled defaults, cache, and shell completions. Pass `--config` to also remove `~/.config/multmux.conf`. After removal, it prints the one-line install command.
+`uninstall` asks for confirmation and removes the multmux executable, cache, and shell completions. Pass `--config` to also remove `~/.config/multmux.conf`. After removal, it prints the one-line install command.
 
 ### `update`
 
 `start` checks for a newer version in the background, at most once every `AUTO_UPDATE_CHECK_INTERVAL_DAYS`. If `AUTO_UPDATE` is true (default), it installs automatically. Otherwise it just leaves a notice.
 
-`update` re-runs the install script regardless of version, then warns about any bundled tmux settings missing from your own config (see Configuration below). Your `~/.config/multmux.conf` is never overwritten.
+`update` re-runs the install script regardless of version. It adds newly required top-level settings from the current defaults to your config and warns about missing tmux settings in user-owned blocks.
 
 `update --dry-run` checks immediately and only reports. It never installs.
 
@@ -142,10 +142,7 @@ Configuration lives at `~/.config/multmux.conf`, a sourced bash file created fro
   see [`defaults/multmux.conf`](defaults/multmux.conf) for the full bundled config with
   comments. Paste your own settings between the `EOF` markers of each block)
 
-`multmux update` warns about settings present in the bundled default but missing from
-your file, without ever modifying it. A missing *required* variable is instead added to
-your file automatically, the next time you run `start`, `add`, `remove`, or
-`reset-layout` (the commands that load configuration).
+`multmux update` adds missing required top-level settings from the current defaults and reports the change. It also warns about tmux directives in the bundled config that your user-owned blocks do not contain. Runtime commands only validate the file and never modify it.
 
 ## Uninstall
 
