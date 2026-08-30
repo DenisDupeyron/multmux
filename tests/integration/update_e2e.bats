@@ -201,6 +201,24 @@ teardown() {
     [[ "${output}" != *"doesn't have tab-completion wired up"* ]]
 }
 
+@test "update: does not warn when fpath/compinit live in .zprofile instead of .zshrc (real terminal is a login shell)" {
+    # A real Terminal/iTerm window runs a LOGIN shell, sourcing
+    # ~/.zprofile as well as ~/.zshrc (Homebrew's shellenv and similar
+    # setup often live in .zprofile). A non-login check would miss this
+    # and warn even though completion genuinely works for the user.
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    export SHELL=/bin/zsh
+    {
+        printf 'fpath=("%s/.local/share/zsh/site-functions" $fpath)\n' "${HOME}"
+        printf 'autoload -Uz compinit\n'
+        printf 'compinit -u\n'
+    } > "${HOME}/.zprofile"
+    rm -f "${HOME}/.zshrc"
+    run "${MM_INSTALLED}" update
+    [ "${status}" -eq 0 ]
+    [[ "${output}" != *"doesn't have tab-completion wired up"* ]]
+}
+
 @test "update: never warns about zsh \$fpath when the user's shell isn't zsh (regression)" {
     export SHELL=/bin/bash
     printf '_completion_loader() { :; }\n' > "${HOME}/.bashrc"

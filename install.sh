@@ -179,7 +179,7 @@ fi
 # Runs on every install/update until the user fixes it on their end.
 
 if [[ "${SHELL:-}" == */bash ]] && command -v bash &>/dev/null; then
-    if ! bash -i -c 'declare -F _completion_loader' </dev/null &>/dev/null; then
+    if ! bash -li -c 'declare -F _completion_loader' </dev/null &>/dev/null; then
         echo ""
         info "WARNING: bash-completion's dynamic loader isn't active in your bash."
         info "multmux tab-completion won't work until you install/enable bash-completion,"
@@ -191,13 +191,15 @@ if [[ "${SHELL:-}" == */bash ]] && command -v bash &>/dev/null; then
 fi
 
 if [[ "${SHELL:-}" == */zsh ]] && command -v zsh &>/dev/null; then
-    # Checks the real outcome (does zsh actually wire 'multmux' to a
-    # completion function after running the user's own ~/.zshrc, whatever
-    # it does), not just whether the directory is on $fpath: a stale
-    # cached compinit dump (common with Oh My Zsh/Prezto/'speed up zsh
-    # startup' setups that skip rescanning fpath) leaves completion
-    # broken even once fpath is correctly set.
-    if [[ "$(zsh -i -c 'print -r -- ${_comps[multmux]:-}' </dev/null 2>/dev/null)" != "_multmux" ]]; then
+    # -li, not just -i: a real Terminal/iTerm window is a LOGIN shell, so
+    # it also sources ~/.zprofile (Homebrew's shellenv and similar often
+    # live there, not ~/.zshrc). Checks the real outcome (does zsh
+    # actually wire 'multmux' to a completion function after running the
+    # user's own startup files, whatever they do), not just whether the
+    # directory is on $fpath: a stale cached compinit dump (common with
+    # Oh My Zsh/Prezto/'speed up zsh startup' setups that skip rescanning
+    # fpath) leaves completion broken even once fpath is correctly set.
+    if [[ "$(zsh -li -c 'print -r -- ${_comps[multmux]:-}' </dev/null 2>/dev/null)" != "_multmux" ]]; then
         echo ""
         info "WARNING: zsh doesn't have tab-completion wired up for multmux yet."
         info "Make sure this runs before any 'compinit' call in your ~/.zshrc:"
