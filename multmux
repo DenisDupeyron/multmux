@@ -20,7 +20,7 @@ set -euo pipefail
 # multmux - tmux wrapper using two isolated sockets
 # https://github.com/DenisDupeyron/multmux
 
-VERSION="0.6.9"
+VERSION="0.6.10"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 INSTALL_DIR="${HOME}/.local/bin"
@@ -320,14 +320,17 @@ cmd_start() {
         esac
     done
 
-    check_for_update
-
-    if outer_running; then
+    if outer_running && inner_running; then
         info "Already running."
         if [[ "${no_attach}" == false ]]; then
             exec ${TMO} attach
         fi
         return 0
+    fi
+
+    if outer_running; then
+        warn "Found an outer session without inner sessions. Restarting..."
+        ${TMO} kill-server 2>/dev/null || true
     fi
 
     if [[ -n "${TMUX:-}" ]]; then

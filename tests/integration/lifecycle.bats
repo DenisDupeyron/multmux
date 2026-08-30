@@ -91,6 +91,20 @@ teardown() {
     [ "${output}" -eq 10 ]
 }
 
+@test "start: recreates both servers when only the outer server survives" {
+    mm_start
+    tmux -L "${MULTMUX_INNER_SOCKET}" kill-server
+
+    run "${MULTMUX_SCRIPT}" start --no-attach
+
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"Restarting"* ]]
+    run tmux -L "${MULTMUX_OUTER_SOCKET}" list-sessions
+    [ "${status}" -eq 0 ]
+    run bash -c "tmux -L '${MULTMUX_INNER_SOCKET}' list-sessions | wc -l | tr -d ' '"
+    [ "${output}" -eq 10 ]
+}
+
 @test "stop: reports 'Not running' and does nothing when nothing is running" {
     run "${MULTMUX_SCRIPT}" stop
     [ "${status}" -eq 0 ]
