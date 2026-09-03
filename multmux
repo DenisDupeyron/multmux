@@ -374,10 +374,13 @@ cmd_start() {
     # returns, and keystrokes sent too early get silently dropped
     # (used to cause fewer than INNER_SESSIONS sessions). -f is a
     # harmless no-op after the first session on an already-running server.
+    # Created in batch_names order (index 0 first) so session_id/creation
+    # order matches slot order: batch_names[0] is both the lowest-numbered
+    # session and the one attached below, so an index/creation-sorted
+    # 'choose-tree' (see BASE_CONF) lists it first, not last.
     info "Starting ${INNER_SESSIONS} inner sessions..."
-    local session idx
-    for session in $(seq "${INNER_SESSIONS}" -1 1); do
-        idx=$((session - 1))
+    local idx
+    for ((idx = 0; idx < INNER_SESSIONS; idx++)); do
         ${TMI} -f "${CACHE_DIR}/inner.conf" new-session -s "${batch_names[idx]}" -c "${START_DIR}" -d
     done
 
