@@ -3,7 +3,8 @@
 #
 # Isolation strategy: every test gets its own throwaway $HOME (so
 # CONF_FILE=~/.config/multmux.conf and CACHE_DIR=~/.cache/multmux never
-# touch the real, live installation) and, for integration tests that need
+# touch the real, live installation, and MULTMUX_SYSTEM_CONF points at a
+# nonexistent path instead of the real /etc/multmux.conf) and, for integration tests that need
 # real tmux, its own uniquely-named -L socket pair, so tests never collide
 # with each other or with a real running multmux.
 
@@ -32,6 +33,16 @@ mm_set_fake_home() {
     MM_FAKE_HOME="$(cd "${MM_FAKE_HOME}" && pwd -P)"
     export HOME="${MM_FAKE_HOME}"
     mkdir -p "${HOME}/.config" "${HOME}/.cache" "${HOME}/.local/bin"
+    # Never read the real /etc/multmux.conf. Points at a path that does not
+    # exist by default. Tests that exercise the system layer create it.
+    export MULTMUX_SYSTEM_CONF="${MM_FAKE_HOME}/etc/multmux.conf"
+}
+
+# Write a system-layer configuration file (content from $1) at the
+# isolated MULTMUX_SYSTEM_CONF path.
+mm_write_system_config() {
+    mkdir -p "$(dirname "${MULTMUX_SYSTEM_CONF}")"
+    printf '%s\n' "$1" >"${MULTMUX_SYSTEM_CONF}"
 }
 
 # Copy the shipped defaults into a fake user configuration. Tests use this

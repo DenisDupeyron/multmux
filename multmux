@@ -21,6 +21,9 @@ set -euo pipefail
 # https://github.com/DenisDupeyron/multmux
 
 VERSION="1.0.1"
+# Layered configuration: the system file is sourced first, then the user
+# file, so the user file overrides it per variable (see config_files).
+SYSTEM_CONF_FILE="${MULTMUX_SYSTEM_CONF:-/etc/multmux.conf}"
 CONF_FILE="${HOME}/.config/multmux.conf"
 CACHE_DIR="${HOME}/.cache/multmux"
 INSTALL_DIR="${HOME}/.local/bin"
@@ -63,10 +66,36 @@ die() {
 warn() { echo "warning: $*" >&2 || true; }
 info() { echo "multmux: $*" || true; }
 
+# Print the configuration files that exist, one per line, in load order
+# (system first, then user). Later files override earlier ones.
+config_files() {
+    local f
+    for f in "${SYSTEM_CONF_FILE}" "${CONF_FILE}"; do
+        if [[ -f "${f}" ]]; then
+            printf '%s\n' "${f}"
+        fi
+    done
+    return 0
+}
+
+# Source every existing configuration file in order, returning nonzero
+# if there is none or any file fails to source (e.g. a syntax error).
+# Callers decide how to react: load_config dies, read_update_settings
+# falls back to defaults. Never mutates a file.
+source_config() {
+    local f found=false
+    while IFS= read -r f; do
+        found=true
+        # shellcheck disable=SC1090
+        source "${f}" || return 1
+    done < <(config_files)
+    [[ "${found}" == true ]]
+}
+
 load_config() {
-    [[ -f "${CONF_FILE}" ]] || die "Config not found: ${CONF_FILE}"
-    # shellcheck disable=SC1090
-    source "${CONF_FILE}"
+    local searched="${SYSTEM_CONF_FILE}, ${CONF_FILE}"
+    [[ -n "$(config_files)" ]] || die "Config not found (searched: ${searched})"
+    source_config || die "Could not load configuration (searched: ${searched}). Check the files for syntax errors."
 
     local required_vars=(START_DIR MAIN_PANE_WIDTH OVERFLOW_PANES INNER_SESSIONS BASE_CONF OUTER_CONF INNER_CONF SESSION_NAME_COMPONENT_MAX SESSION_NAME_TOTAL_MAX)
     local var missing_vars=()
@@ -74,7 +103,7 @@ load_config() {
         [[ -n "${!var+x}" ]] || missing_vars+=("${var}")
     done
     if ((${#missing_vars[@]} > 0)); then
-        die "Config ${CONF_FILE} is missing required variable(s): ${missing_vars[*]}. Run 'multmux update' to add settings from the current defaults."
+        die "Config (${searched}) is missing required variable(s): ${missing_vars[*]}. Run 'multmux update' to add settings from the current defaults."
     fi
 
     if [[ ! "${INNER_SESSIONS}" =~ ^[1-9][0-9]?$ ]]; then
@@ -749,15 +778,18 @@ show_update_notice_if_cached() {
 }
 
 # Read AUTO_UPDATE* independently of load_config, so a broken config
-# can't break starting/attaching. Falls back to defaults otherwise.
+# can't break starting/attaching. Uses the same layered files as
+# load_config. Falls back to defaults otherwise.
 read_update_settings() {
     AUTO_UPDATE=true
     AUTO_UPDATE_CHECK_INTERVAL_DAYS=7
-    [[ -f "${CONF_FILE}" ]] || return 0
     local vals
     vals="$(
-        # shellcheck disable=SC1090
-        source "${CONF_FILE}" &>/dev/null
+        # Defaults first: a file that sets neither variable still yields
+        # valid values, and an unset variable can't trip set -u.
+        AUTO_UPDATE=true
+        AUTO_UPDATE_CHECK_INTERVAL_DAYS=7
+        source_config &>/dev/null || exit 1
         printf '%s\n%s\n' "${AUTO_UPDATE}" "${AUTO_UPDATE_CHECK_INTERVAL_DAYS}"
     )" 2>/dev/null || return 0
     [[ -n "${vals}" ]] || return 0
@@ -903,7 +935,9 @@ Commands:
   uninstall [--config]  Remove multmux files (asks for confirmation)
   help                  Show this help
 
-Configuration: ${CONF_FILE}
+Configuration (later overrides earlier, per variable):
+  ${SYSTEM_CONF_FILE}
+  ${CONF_FILE}
 EOF
 }
 
