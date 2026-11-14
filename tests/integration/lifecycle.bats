@@ -244,6 +244,17 @@ teardown() {
     [ ! -e "${HOME}/.config/multmux.conf" ]
 }
 
+@test "uninstall: --config never touches the system configuration file" {
+    installed="$(mm_install_self)"
+    mm_write_system_config 'AUTO_UPDATE=false'
+
+    run bash -c "printf 'Y\\n' | '${installed}' uninstall --config"
+
+    [ "${status}" -eq 0 ]
+    [ ! -e "${HOME}/.config/multmux.conf" ]
+    [ "$(cat "${MULTMUX_SYSTEM_CONF}")" = "AUTO_UPDATE=false" ]
+}
+
 @test "uninstall: rejects unknown options" {
     installed="$(mm_install_self)"
 

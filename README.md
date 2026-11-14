@@ -73,7 +73,16 @@ multmux help                  # Show help
 
 ## Configuration
 
-The configuration is at `~/.config/multmux.conf`. A [default version](defaults/multmux.conf) is copied there on first install.
+Configuration is read from up to two files, in this order:
+
+1. `/etc/multmux.conf` (system-wide)
+2. `~/.config/multmux.conf` (per-user)
+
+Each file that exists is sourced, and later files override earlier ones **per variable**, so your user file only needs the settings you want to change. Either file works on its own; `multmux` only fails if neither exists (or a required setting is missing from both).
+
+The installer copies a [default version](defaults/multmux.conf) to `~/.config/multmux.conf` on first install, so existing installs behave exactly as before. Distro packages may instead ship `/etc/multmux.conf` and leave the user file out. The installer and `multmux update` never touch the system file (its upkeep belongs to the package), and `multmux uninstall --config` only removes the user file.
+
+`BASE_CONF`, `OUTER_CONF` and `INNER_CONF` hold multi-line `tmux` configuration but are plain variables like any other: overriding one in your user file **replaces** the system value entirely, it does not append. Copy the whole block from the system file if you only want to tweak a line.
 
 It's a sourced bash file to avoid having to create a parser, which makes the code a lot simpler and more maintainable.
 

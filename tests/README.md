@@ -41,7 +41,10 @@ exercised:
   symlinked and nonexistent directories, the lowest-available-suffix
   collision rule (including reusing a freed gap), and a session renaming
   itself to its own name never counting as a collision.
-- **Config loading:** missing configuration files, required variables rejected
+- **Config loading:** layered `/etc/multmux.conf` (via `MULTMUX_SYSTEM_CONF`,
+  always isolated per test) then user file: either alone, per-variable
+  override, required variables validated on the merged result, neither file
+  present, missing configuration files, required variables rejected
   without mutation, and the `SESSION_NAME_TOTAL_MAX >= COMPONENT_MAX + 2`
   validation boundary.
 - **Config update:** fresh configuration creation, update-time migration of

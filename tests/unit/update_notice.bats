@@ -71,6 +71,38 @@ setup() {
     [ "${AUTO_UPDATE_CHECK_INTERVAL_DAYS}" = "7" ]
 }
 
+@test "read_update_settings: AUTO_UPDATE=false in the system file is honored" {
+    mm_write_system_config $'AUTO_UPDATE=false\nAUTO_UPDATE_CHECK_INTERVAL_DAYS=2'
+    [ ! -f "${CONF_FILE}" ]
+    read_update_settings
+    [ "${AUTO_UPDATE}" = "false" ]
+    [ "${AUTO_UPDATE_CHECK_INTERVAL_DAYS}" = "2" ]
+}
+
+@test "read_update_settings: user file overrides the system file" {
+    mm_write_system_config $'AUTO_UPDATE=false\nAUTO_UPDATE_CHECK_INTERVAL_DAYS=2'
+    printf 'AUTO_UPDATE=true\n' >"${CONF_FILE}"
+    read_update_settings
+    [ "${AUTO_UPDATE}" = "true" ]
+    [ "${AUTO_UPDATE_CHECK_INTERVAL_DAYS}" = "2" ]
+}
+
+@test "read_update_settings: a variable unset by the files keeps its default" {
+    mm_write_system_config 'START_DIR=/tmp'
+    read_update_settings
+    [ "${AUTO_UPDATE}" = "true" ]
+    [ "${AUTO_UPDATE_CHECK_INTERVAL_DAYS}" = "7" ]
+}
+
+@test "read_update_settings: a broken system file falls back to defaults without dying" {
+    mm_write_system_config 'this is not valid bash((( '
+    run read_update_settings
+    [ "${status}" -eq 0 ]
+    read_update_settings
+    [ "${AUTO_UPDATE}" = "true" ]
+    [ "${AUTO_UPDATE_CHECK_INTERVAL_DAYS}" = "7" ]
+}
+
 @test "read_update_settings: never used to break 'multmux start' even with a totally missing config" {
     # Sanity/documentation test: read_update_settings itself never dies,
     # unlike load_config. cmd_start relies on this ordering (check_for_update
